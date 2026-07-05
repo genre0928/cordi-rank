@@ -1,0 +1,117 @@
+import { Shuffle } from "lucide-react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { isLikeAction } from "~/lib/should-revalidate";
+import { CharacterImageCard } from "~/components/CharacterImageCard";
+import { ItemSearchForm } from "~/components/ItemSearchForm";
+import { RankingSidebar } from "~/components/RankingSidebar";
+import { decodeItemEntry } from "~/lib/item-search-params";
+import {
+  getLikedRanking,
+  getRandomCoordi,
+  isLikedByUser,
+  searchCoordiByItems,
+} from "~/services/coordi-service.server";
+import type { GenderFilter, ItemSearchEntry, RankingPeriod } from "~/types/coordi";
+import type { Route } from "./+types/home";
+
+const RANKING_LIMIT = 10;
+const RANDOM_SAMPLE_SIZE = 20;
+
+function parseItems(searchParams: URLSearchParams): ItemSearchEntry[] {
+  return searchParams
+    .getAll("item")
+    .map(decodeItemEntry)
+    .filter((entry): entry is ItemSearchEntry => entry !== null);
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const url = new URL(request.url);
+  const items = parseItems(url.searchParams);
+  const gender = (url.searchParams.get("gender") as GenderFilter) || "all";
+  const period = (url.searchParams.get("period") as RankingPeriod) || "today";
+  const hasSearched = items.length > 0;
+
+  const [displayResults, ranking] = await Promise.all([
+    hasSearched
+      ? searchCoordiByItems({ items, gender })
+      : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
+    getLikedRanking(period, RANKING_LIMIT),
+  ]);
+
+  const likedMap = Object.fromEntries(
+    [...displayResults, ...ranking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
+  );
+
+  return { items, gender, period, hasSearched, displayResults, ranking, likedMap };
+}
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  // 좋아요 버튼은 카드 자체 상태로만 반영하면 되므로, 이 때문에 무작위 목록/랭킹을
+  // 다시 불러와 화면 전체가 리셔플되는 걸 막는다.
+  if (isLikeAction(args)) return false;
+  return args.defaultShouldRevalidate;
+}
+
+export const meta: Route.MetaFunction = ({ data }) => {
+  const hasSearched = (data?.items.length ?? 0) > 0;
+  const title = hasSearched
+    ? `"${data?.items.map((entry) => entry.keyword).join(", ")}" 아이템 코디 검색 | 코디랭킹`
+    : "아이템으로 코디 찾기 | 코디랭킹";
+  const description =
+    "메이플스토리 아이템 이름으로 착용 캐릭터의 코디 이미지를 검색하고, 마음에 드는 코디에 좋아요를 눌러 랭킹을 만들어보세요.";
+
+  return [
+    { title },
+    { name: "description", content: description },
+    { property: "og:title", content: title },
+    { property: "og:description", content: description },
+    { property: "og:type", content: "website" },
+  ];
+};
+
+export default function Home({ loaderData }: Route.ComponentProps) {
+  const { items, gender, period, hasSearched, displayResults, ranking, likedMap } = loaderData;
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
+      <section>
+        <div className="mb-6">
+          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">아이템으로 코디 찾기</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            아이템 이름을 입력하고 Enter를 누르면 그 아이템을 착용한 캐릭터의 코디 이미지를 모아
+            보여드려요.
+          </p>
+        </div>
+
+        <ItemSearchForm initialItems={items} initialGender={gender} />
+
+        <div className="mt-6">
+          {!hasSearched && (
+            <p className="mb-3 flex items-center gap-1.5 text-sm text-gray-400">
+              <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
+              무작위로 뽑아본 코디예요. 새로고침을 누르면 다른 코디를 볼 수 있어요.
+            </p>
+          )}
+
+          {hasSearched && displayResults.length === 0 ? (
+            <p className="py-16 text-center text-gray-400">조건에 맞는 코디를 찾지 못했어요.</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+              {displayResults.map((entry) => (
+                <li key={entry.ocid}>
+                  <CharacterImageCard
+                    entry={entry}
+                    initiallyLiked={likedMap[entry.ocid] ?? false}
+                    linkToDetail
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <RankingSidebar period={period} items={ranking} likedMap={likedMap} />
+    </main>
+  );
+}

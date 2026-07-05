@@ -1,0 +1,73 @@
+-- 코디랭킹 초기 스키마
+-- 부분 일치 검색(ILIKE) 성능을 위한 확장
+create extension if not exists pg_trgm;
+
+create table if not exists characters (
+  ocid text primary key,
+  character_name text not null,
+  world_name text not null,
+  -- 실제 API에는 남/여 외에 "기타"도 나올 수 있어(예: 넥슨 캐시샵 성별중립 캐릭터) 값을 강제하지 않는다.
+  gender text not null,
+  -- 제로/메카닉/제논 등 5개 직업군에 안 맞는 특수 직업은 "기타" 버킷 없이 크롤링 단계에서 제외한다.
+  job_group text not null check (job_group in ('전사', '마법사', '궁수', '도적', '해적')),
+  job_class text not null,
+  level integer not null,
+  guild_name text,
+  character_image_url text not null,
+  -- 캐시 장비가 아닌 외형 커스터마이징 (character/beauty-equipment 응답 기준)
+  hair_name text,
+  hair_base_color text,
+  hair_mix_color text,
+  hair_mix_rate integer,
+  face_name text,
+  face_base_color text,
+  face_mix_color text,
+  face_mix_rate integer,
+  skin_name text,
+  skin_color_style text,
+  skin_hue integer,
+  skin_saturation integer,
+  skin_brightness integer,
+  like_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists characters_like_count_idx on characters (like_count desc);
+create index if not exists characters_created_at_idx on characters (created_at desc);
+create index if not exists characters_gender_idx on characters (gender);
+
+create table if not exists cash_items (
+  id bigint generated always as identity primary key,
+  character_ocid text not null references characters (ocid) on delete cascade,
+  part text not null,
+  name text not null,
+  icon_url text,
+  prism_applied boolean not null default false,
+  color_range text,
+  -- 프리즘 적용 시의 색조/채도/명도 (cash_item_coloring_prism 또는 effect_prism)
+  hue integer,
+  saturation integer,
+  value integer
+);
+
+create index if not exists cash_items_character_ocid_idx on cash_items (character_ocid);
+create index if not exists cash_items_name_trgm_idx on cash_items using gin (name gin_trgm_ops);
+
+-- 크롤러가 delete+insert 대신 upsert를 쓸 수 있게, 캐릭터당 부위 하나는 항상 한 행만 있도록 강제한다.
+alter table cash_items
+  drop constraint if exists cash_items_ocid_part_unique;
+alter table cash_items
+  add constraint cash_items_ocid_part_unique unique (character_ocid, part);
+
+-- 읽기는 누구나(anon key), 쓰기는 service role 키로만 (RLS는 service role에 적용되지 않음)
+alter table characters enable row level security;
+alter table cash_items enable row level security;
+
+drop policy if exists "public read characters" on characters;
+create policy "public read characters" on characters
+  for select using (true);
+
+drop policy if exists "public read cash_items" on cash_items;
+create policy "public read cash_items" on cash_items
+  for select using (true);
