@@ -26,6 +26,7 @@ export function CharacterImageCard({
   initiallyLiked,
   linkToDetail = false,
   showName = false,
+  overlayAlign = "right",
 }: {
   entry: CoordiEntry;
   rank?: number;
@@ -34,6 +35,11 @@ export function CharacterImageCard({
   linkToDetail?: boolean;
   /** 랭킹 사이드바처럼 이미지 아래에 캐릭터 닉네임을 보여줄 때 사용 */
   showName?: boolean;
+  /**
+   * 아이템 정보 패널이 배지 기준 오른쪽(기본)/왼쪽 중 어느 쪽으로 펼쳐질지.
+   * 그리드 맨 오른쪽 카드처럼 오른쪽으로 펼치면 컨테이너 밖으로 잘리는 자리에서는 "left"로.
+   */
+  overlayAlign?: "right" | "left";
 }) {
   const { liked, count, toggle } = useLike(entry.ocid, initiallyLiked, entry.likeCount);
   const { rows, transparentItems } = buildDisplayRows(entry);
@@ -81,7 +87,12 @@ export function CharacterImageCard({
               <Shirt className="h-3.5 w-3.5" aria-hidden="true" />
             </div>
 
-            <div className="pointer-events-none absolute left-full top-0 z-30 ml-1 w-56 max-w-[80vw] rounded-lg bg-black/90 p-2.5 opacity-0 shadow-xl transition-opacity duration-150 group-hover/info:opacity-100">
+            <div
+              className={cn(
+                "pointer-events-none absolute top-0 z-30 w-56 max-w-[80vw] rounded-lg bg-black/90 p-2.5 opacity-0 shadow-xl transition-opacity duration-150 group-hover/info:opacity-100",
+                overlayAlign === "right" ? "left-full ml-1" : "right-full mr-1",
+              )}
+            >
               <ul className="space-y-1 text-[11px] leading-tight text-white">
                 {rows.map((row) => (
                   <li key={row.key}>

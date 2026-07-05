@@ -1,7 +1,5 @@
-import type {
-  CharacterGender,
-  NexonCashItemEquipmentItem,
-} from "./nexon";
+/** character/basic 응답 기준. 남/여 외에 "기타"도 나올 수 있어 characters.gender 컬럼 자체는 강제하지 않지만, 성별 필터 UI는 이 두 값만 다룬다. */
+export type CharacterGender = "남" | "여";
 
 export type JobGroup =
   | "전사"
@@ -101,18 +99,4 @@ export interface CoordiEntry {
   likeCount: number;
   createdAt: string;
   tags: string[];
-}
-
-export function toCashItem(item: NexonCashItemEquipmentItem): CashItem {
-  const prism = item.cash_item_coloring_prism ?? item.cash_item_effect_prism;
-  return {
-    part: item.cash_item_equipment_part as CashPart,
-    name: item.cash_item_name,
-    iconUrl: item.cash_item_icon,
-    prismApplied: prism !== null,
-    colorRange: prism?.color_range ?? null,
-    hue: prism?.hue ?? null,
-    saturation: prism?.saturation ?? null,
-    value: prism?.value ?? null,
-  };
 }
