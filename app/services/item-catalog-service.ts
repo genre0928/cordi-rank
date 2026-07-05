@@ -88,8 +88,7 @@ export async function searchItemSuggestions(
 /** 태그의 프리즘 토글 버튼에 쓰는 아이콘 (컬러링 프리즘). */
 export const PRISM_ICON_URL = `${MAPLESTORY_IO_BASE}/item/5782000/icon`;
 
-/**
- * 헤어/성형/피부 칸에 쓰는 아이콘. 실제 "마네킹"(id 5680222) 캐시 아이템의 아이콘으로,
- * 게임 내에서 헤어·성형·피부 룩을 저장할 때 쓰는 바로 그 아이템이다.
- */
-export const MANNEQUIN_ICON_URL = `${MAPLESTORY_IO_BASE}/item/5680222/icon`;
+/** 장비 그리드의 헤어/성형/피부 칸에 쓰는 아이콘. */
+export const HAIR_ICON_URL = "https://cdn.dak.gg/maple/images/analysis/hair-icon.png";
+export const FACE_ICON_URL = "https://cdn.dak.gg/maple/images/analysis/face-icon.png";
+export const SKIN_ICON_URL = "https://cdn.dak.gg/maple/images/analysis/skin-icon.png";

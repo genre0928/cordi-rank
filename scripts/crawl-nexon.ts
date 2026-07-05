@@ -9,11 +9,8 @@ import { runCrawl } from "../app/services/crawler.server";
 
 const sampleSize = Number(process.argv[2] ?? 100);
 
-runCrawl(sampleSize)
-  .then((result) => {
-    console.log(`\n완료: 성공 ${result.success} / 실패 ${result.fail} / 미분류로 건너뜀 ${result.skipped}`);
-  })
-  .catch((error) => {
-    console.error("크롤 실패:", error instanceof Error ? error.message : error);
-    process.exit(1);
-  });
+// 완료 로그는 runCrawl 내부(app/services/crawler.server.ts)에서 이미 찍으므로 여기서는 실패만 처리한다.
+runCrawl(sampleSize).catch((error) => {
+  console.error("크롤 실패:", error instanceof Error ? error.message : error);
+  process.exit(1);
+});

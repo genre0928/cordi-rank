@@ -1,16 +1,24 @@
 import { CoordiPortrait } from "~/components/CoordiPortrait";
 import { buildEquipmentGridLayout, type GridSlot } from "~/lib/coordi-display-rows";
-import { MANNEQUIN_ICON_URL, PRISM_ICON_URL } from "~/services/item-catalog-service";
+import { FACE_ICON_URL, HAIR_ICON_URL, PRISM_ICON_URL, SKIN_ICON_URL } from "~/services/item-catalog-service";
 import type { CoordiEntry } from "~/types/coordi";
 
+/** 헤어/성형/피부는 아이템 아이콘이 없어, 부위별 고정 아이콘을 대신 쓴다. */
+const APPEARANCE_ICON_URLS: Record<string, string> = {
+  hair: HAIR_ICON_URL,
+  face: FACE_ICON_URL,
+  skin: SKIN_ICON_URL,
+};
+
 function SlotBox({ slot }: { slot: GridSlot }) {
+  const appearanceIconUrl = APPEARANCE_ICON_URLS[slot.key];
+
   return (
     <div className="group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 sm:h-14 sm:w-14">
       {slot.iconUrl ? (
         <img src={slot.iconUrl} alt={slot.name ?? slot.label} className="h-6 w-6 object-contain sm:h-9 sm:w-9" />
-      ) : slot.name ? (
-        // 헤어/성형/피부는 아이템 아이콘이 없어, 실제 "마네킹"(뷰티 저장) 아이템의 아이콘을 대신 쓴다.
-        <img src={MANNEQUIN_ICON_URL} alt={slot.name} className="h-6 w-6 object-contain sm:h-9 sm:w-9" />
+      ) : slot.name && appearanceIconUrl ? (
+        <img src={appearanceIconUrl} alt={slot.name} className="h-6 w-6 object-contain sm:h-9 sm:w-9" />
       ) : (
         <span className="px-0.5 text-center text-[7px] font-bold leading-tight text-gray-400 dark:text-gray-600 sm:text-[9px]">
           {slot.label}
