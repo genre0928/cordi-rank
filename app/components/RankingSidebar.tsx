@@ -51,7 +51,7 @@ export function RankingSidebar({
     <aside className="mt-10 lg:mt-0">
       <h2 className="flex items-center gap-1.5 text-lg font-bold">
         <Trophy className="h-5 w-5 text-amber-500" aria-hidden="true" />
-        좋아요 랭킹
+        통계
       </h2>
 
       <div
