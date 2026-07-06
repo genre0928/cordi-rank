@@ -1,4 +1,5 @@
 import { Heart, Shirt } from "lucide-react";
+import { useRef, useState } from "react";
 import { CoordiPortrait } from "~/components/CoordiPortrait";
 import { RankBadge } from "~/components/RankBadge";
 import { useCoordiModal } from "~/context/coordi-modal";
@@ -8,13 +9,19 @@ import { cn } from "~/lib/cn";
 import { PRISM_ICON_URL } from "~/services/item-catalog-service";
 import type { CoordiEntry } from "~/types/coordi";
 
+/** 정보 패널의 고정 폭(w-56)과 여백. 오른쪽 공간이 이보다 부족하면 패널을 왼쪽으로 뒤집는다. */
+const OVERLAY_PANEL_WIDTH = 224;
+const OVERLAY_GAP = 8;
+
 /**
  * 이름/레벨/직업 같은 상세 정보 없이 이미지와 좋아요만 노출하는 단순 카드.
  * 아이템 검색 결과와 랭킹 사이드바 모두 이 카드를 사용한다.
  * 이미지 우측 상단에 착용 아이템 아이콘이 고정으로 떠 있고, 이 아이콘에 hover하면
- * 배지 오른쪽으로 착용 중인 아이템(부위: 이름) 목록 패널이 펼쳐진다(카드 전체가 아니라
- * 아이콘에만 반응). 패널은 이미지 높이에 갇히지 않고 필요한 만큼 늘어나므로(이미지
- * 위를 덮는 방식이 아니라 옆에 떠 있는 방식), 아이템이 많아도 잘리지 않는다.
+ * 착용 중인 아이템(부위: 이름) 목록 패널이 펼쳐진다(카드 전체가 아니라 아이콘에만 반응).
+ * 패널은 이미지 높이에 갇히지 않고 필요한 만큼 늘어나므로(이미지 위를 덮는 방식이 아니라
+ * 옆에 떠 있는 방식), 아이템이 많아도 잘리지 않는다.
+ * 패널이 배지 오른쪽/왼쪽 중 어느 쪽으로 펼쳐질지는 hover 시점에 실제 남은 공간을 재서
+ * 자동으로 정한다(모달/그리드가 몇 열이든, 카드가 맨 오른쪽에 있어도 화면 밖으로 잘리지 않음).
  * 그리드에서는 패널이 옆 카드 위로 넘어가므로, hover 중인 카드 전체의 z-index를
  * 올려(has-[...]:z-40) 옆 카드의 배지/좋아요 버튼에 가려지지 않게 한다.
  * 착용하지 않은 부위는 목록에서 제외하고(반지는 아예 크롤링하지 않음), 헤어/성형/
@@ -26,7 +33,6 @@ export function CharacterImageCard({
   initiallyLiked,
   linkToDetail = false,
   showName = false,
-  overlayAlign = "right",
 }: {
   entry: CoordiEntry;
   rank?: number;
@@ -35,16 +41,26 @@ export function CharacterImageCard({
   linkToDetail?: boolean;
   /** 랭킹 사이드바처럼 이미지 아래에 캐릭터 닉네임을 보여줄 때 사용 */
   showName?: boolean;
-  /**
-   * 아이템 정보 패널이 배지 기준 오른쪽(기본)/왼쪽 중 어느 쪽으로 펼쳐질지.
-   * 그리드 맨 오른쪽 카드처럼 오른쪽으로 펼치면 컨테이너 밖으로 잘리는 자리에서는 "left"로.
-   */
-  overlayAlign?: "right" | "left";
 }) {
   const { liked, count, toggle } = useLike(entry.ocid, initiallyLiked, entry.likeCount);
   const { rows, transparentItems } = buildDisplayRows(entry);
   const hasAnyItem = rows.length > 0 || transparentItems.length > 0;
   const { open: openDetailModal } = useCoordiModal();
+
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const [overlayAlign, setOverlayAlign] = useState<"right" | "left">("right");
+
+  function updateOverlayAlign() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    // 모달 안이면 뷰포트가 아니라 모달 박스 경계를 기준으로 남은 공간을 재야 한다.
+    const dialog = el.closest('[role="dialog"]');
+    const container = dialog?.querySelector<HTMLElement>(":scope > div") ?? document.documentElement;
+    const containerRight = container.getBoundingClientRect().right;
+    const spaceOnRight = containerRight - rect.right;
+    setOverlayAlign(spaceOnRight < OVERLAY_PANEL_WIDTH + OVERLAY_GAP ? "left" : "right");
+  }
 
   return (
     <div className="relative has-[.info-trigger:hover]:z-40">
@@ -82,7 +98,12 @@ export function CharacterImageCard({
         </div>
 
         {hasAnyItem && (
-          <div className="info-trigger group/info absolute right-2 top-2 z-30">
+          <div
+            ref={triggerRef}
+            className="info-trigger group/info absolute right-2 top-2 z-30"
+            onMouseEnter={updateOverlayAlign}
+            onFocus={updateOverlayAlign}
+          >
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur">
               <Shirt className="h-3.5 w-3.5" aria-hidden="true" />
             </div>

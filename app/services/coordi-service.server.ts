@@ -160,6 +160,25 @@ async function ocidsMatchingCondition(keyword: string, prismOnly: boolean): Prom
   return new Set((data ?? []).map((row) => row.character_ocid as string));
 }
 
+/**
+ * 아이템 이름별로 실제 착용 중인 캐릭터 수를 센다 (자동완성에서 "0명"인 아이템을
+ * 미리 보여줘서 검색해도 결과가 없는 걸 검색 전에 알 수 있게 한다).
+ */
+export async function countWearersByItemNames(names: string[]): Promise<Record<string, number>> {
+  if (names.length === 0) return {};
+
+  const { data, error } = await supabase.from("cash_items").select("name, character_ocid").in("name", names);
+  if (error) throw new Error(`아이템 착용자 수 조회 실패: ${error.message}`);
+
+  const ocidsByName = new Map<string, Set<string>>();
+  for (const row of data ?? []) {
+    const set = ocidsByName.get(row.name) ?? new Set<string>();
+    set.add(row.character_ocid);
+    ocidsByName.set(row.name, set);
+  }
+  return Object.fromEntries([...ocidsByName].map(([name, ocids]) => [name, ocids.size]));
+}
+
 /** 아이템 이름(부위 무관) 다중 조건 + 성별로 캐릭터 코디 이미지를 찾는다. 프리즘 적용 여부는 아이템별로 검사한다. */
 export async function searchCoordiByItems({
   items,

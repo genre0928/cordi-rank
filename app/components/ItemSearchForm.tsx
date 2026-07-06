@@ -208,8 +208,16 @@ export function ItemSearchForm({
                   className="h-6 w-6 shrink-0 object-contain"
                   loading="lazy"
                 />
-                <span className="truncate text-gray-700 dark:text-gray-200">
+                <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
                   {suggestion.name}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-xs",
+                    suggestion.wearerCount ? "text-gray-400 dark:text-gray-500" : "text-gray-300 dark:text-gray-600",
+                  )}
+                >
+                  {(suggestion.wearerCount ?? 0).toLocaleString("ko-KR")}명 착용
                 </span>
               </button>
             </li>

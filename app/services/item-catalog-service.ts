@@ -54,6 +54,8 @@ export interface ItemSuggestion {
   id: number;
   name: string;
   iconUrl: string;
+  /** 이 아이템을 실제로 착용 중인 캐릭터 수. /api/item-suggestions 라우트에서 DB 조회 후 채워진다. */
+  wearerCount?: number;
 }
 
 export async function searchItemSuggestions(

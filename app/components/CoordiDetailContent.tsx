@@ -38,15 +38,9 @@ export function CoordiDetailContent({
         <section className="mt-8">
           <h2 className="mb-3 text-base font-bold">같은 아이템을 착용한 코디</h2>
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {sameItemCoordi.map((item, index) => (
+            {sameItemCoordi.map((item) => (
               <li key={item.ocid}>
-                <CharacterImageCard
-                  entry={item}
-                  initiallyLiked={false}
-                  linkToDetail
-                  // 맨 오른쪽(마지막) 카드는 배지 오른쪽으로 패널을 펼치면 모달 밖으로 잘리므로 왼쪽으로 뒤집는다.
-                  overlayAlign={index === sameItemCoordi.length - 1 ? "left" : "right"}
-                />
+                <CharacterImageCard entry={item} initiallyLiked={false} linkToDetail />
               </li>
             ))}
           </ul>
