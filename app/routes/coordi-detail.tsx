@@ -12,13 +12,18 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-  const entry = await getCoordiDetail(params.ocid);
+  const id = Number(params.id);
+  if (!Number.isFinite(id)) {
+    throw new Response("코디를 찾을 수 없습니다.", { status: 404 });
+  }
+
+  const entry = await getCoordiDetail(id);
   if (!entry) {
     throw new Response("코디를 찾을 수 없습니다.", { status: 404 });
   }
 
   const sameItemCoordi = await getCoordiWithSharedItems(entry);
-  return { entry, sameItemCoordi, liked: isLikedByUser(entry.ocid) };
+  return { entry, sameItemCoordi, liked: isLikedByUser(entry.id) };
 }
 
 export const meta: Route.MetaFunction = ({ data }) => {

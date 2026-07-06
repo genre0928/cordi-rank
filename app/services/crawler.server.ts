@@ -7,6 +7,7 @@
  * 실행될 때 alias 해석 없이도 상대 경로 import만으로 이 파일을 가져올 수 있게 하기 위함이다.
  */
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import WebSocket from "ws";
 
 const NEXON_BASE = "https://open.api.nexon.com/maplestory/v1";
@@ -157,6 +158,51 @@ function selectActiveCashItems(cash: NexonCashItemEquipment): NexonCashItem[] {
   return [...byPart.values()];
 }
 
+/**
+ * 착용 아이템 조합 + 헤어/성형/피부를 하나의 문자열로 정규화해 해시로 만든다. 같은 ocid의
+ * 최신 스냅샷과 이 값을 비교해서 "코디가 실제로 바뀌었는지"를 값 하나로 빠르게 판단한다.
+ * 아이템 순서에 따라 값이 달라지면 안 되므로 부위+이름 기준으로 정렬한 뒤 만든다.
+ */
+function computeCoordiHash(
+  items: { part: string; name: string; prism_applied: boolean; color_range: string | null; hue: number | null; saturation: number | null; value: number | null }[],
+  beauty: NexonBeautyEquipment,
+): string {
+  const sortedItems = [...items].sort(
+    (a, b) => a.part.localeCompare(b.part) || a.name.localeCompare(b.name),
+  );
+  const signature = JSON.stringify({
+    items: sortedItems.map((item) => [
+      item.part,
+      item.name,
+      item.prism_applied,
+      item.color_range,
+      item.hue,
+      item.saturation,
+      item.value,
+    ]),
+    hair: [
+      beauty.character_hair.hair_name,
+      beauty.character_hair.base_color,
+      beauty.character_hair.mix_color,
+      beauty.character_hair.mix_rate,
+    ],
+    face: [
+      beauty.character_face.face_name,
+      beauty.character_face.base_color,
+      beauty.character_face.mix_color,
+      beauty.character_face.mix_rate,
+    ],
+    skin: [
+      beauty.character_skin.skin_name,
+      beauty.character_skin.color_style,
+      beauty.character_skin.hue,
+      beauty.character_skin.saturation,
+      beauty.character_skin.brightness,
+    ],
+  });
+  return createHash("sha256").update(signature).digest("hex");
+}
+
 const DELAY_MS = 150;
 
 function sleep(ms: number) {
@@ -169,6 +215,7 @@ export interface CrawlResult {
   success: number;
   fail: number;
   skipped: number;
+  unchanged: number;
 }
 
 /** 이 서버 프로세스 안에서 크롤이 겹쳐 실행되지 않도록 막는 아주 단순한 잠금. */
@@ -176,9 +223,10 @@ let isCrawlRunning = false;
 
 /**
  * 넥슨 전체 랭킹에서 상위 sampleSize명을 뽑아 캐릭터/캐시 장비/헤어·성형·피부 정보를
- * Supabase에 채운다. cash_items는 (character_ocid, part) 유니크 제약을 활용한 upsert +
- * 더 이상 착용하지 않는 부위만 정리 삭제하는 방식이라, 몇 번을 다시 실행해도(혹은 중간에
- * 실패해도) 중복 없이 항상 같은 결과로 수렴한다.
+ * 조회한다. 캐릭터(ocid)당 한 행이 아니라 "코디 스냅샷"당 한 행이라, coordi_hash로
+ * 같은 ocid의 최신 스냅샷과 비교해 착용 조합이 실제로 바뀐 경우에만 새 행을 추가한다
+ * (바뀌지 않았으면 아무것도 쓰지 않고 건너뛴다). 그래서 몇 번을 다시 실행해도 중복
+ * 스냅샷이 쌓이지 않는다.
  */
 export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
   if (isCrawlRunning) {
@@ -232,6 +280,7 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
     let success = 0;
     let fail = 0;
     let skipped = 0;
+    let unchanged = 0;
 
     for (const [i, char] of targets.entries()) {
       try {
@@ -259,33 +308,6 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
           `/character/beauty-equipment?ocid=${ocid}&date=${date}`,
         );
 
-        const { error: upsertError } = await supabase.from("characters").upsert({
-          ocid,
-          character_name: basic.character_name,
-          world_name: basic.world_name,
-          gender: basic.character_gender,
-          job_group: jobGroup,
-          job_class: basic.character_class,
-          level: basic.character_level,
-          guild_name: basic.character_guild_name,
-          character_image_url: basic.character_image,
-          hair_name: beauty.character_hair.hair_name,
-          hair_base_color: beauty.character_hair.base_color,
-          hair_mix_color: beauty.character_hair.mix_color,
-          hair_mix_rate: Number(beauty.character_hair.mix_rate),
-          face_name: beauty.character_face.face_name,
-          face_base_color: beauty.character_face.base_color,
-          face_mix_color: beauty.character_face.mix_color,
-          face_mix_rate: Number(beauty.character_face.mix_rate),
-          skin_name: beauty.character_skin.skin_name,
-          skin_color_style: beauty.character_skin.color_style,
-          skin_hue: beauty.character_skin.hue,
-          skin_saturation: beauty.character_skin.saturation,
-          skin_brightness: beauty.character_skin.brightness,
-          updated_at: new Date().toISOString(),
-        });
-        if (upsertError) throw new Error(upsertError.message);
-
         // 반지는 캐릭터 이미지에 렌더링되지 않아 크롤링 자체에서 제외한다.
         const cashItems = selectActiveCashItems(cash).filter(
           (item) => item.cash_item_equipment_part !== "반지",
@@ -294,7 +316,6 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
         const items = cashItems.map((item) => {
           const prism = item.cash_item_coloring_prism ?? item.cash_item_effect_prism;
           return {
-            character_ocid: ocid,
             part: item.cash_item_equipment_part,
             name: item.cash_item_name,
             icon_url: item.cash_item_icon,
@@ -306,24 +327,65 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
           };
         });
 
+        const coordiHash = computeCoordiHash(items, beauty);
+
+        const { data: latestRows, error: latestError } = await supabase
+          .from("characters")
+          .select("id, coordi_hash")
+          .eq("ocid", ocid)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (latestError) throw new Error(latestError.message);
+        const latest = latestRows?.[0] as { id: number; coordi_hash: string | null } | undefined;
+
+        if (latest && latest.coordi_hash === coordiHash) {
+          unchanged++;
+          console.log(`[${i + 1}/${targets.length}] ${char.character_name} 코디 변경 없음, 건너뜀`);
+          await sleep(DELAY_MS);
+          continue;
+        }
+
+        // 착용 조합이 바뀌었거나(또는 이 ocid의 첫 크롤링이면) 새 스냅샷 행을 추가한다.
+        // upsert가 아니라 insert라, 같은 ocid의 예전 스냅샷은 그대로 남는다.
+        const { data: inserted, error: insertError } = await supabase
+          .from("characters")
+          .insert({
+            ocid,
+            character_name: basic.character_name,
+            world_name: basic.world_name,
+            gender: basic.character_gender,
+            job_group: jobGroup,
+            job_class: basic.character_class,
+            level: basic.character_level,
+            guild_name: basic.character_guild_name,
+            character_image_url: basic.character_image,
+            hair_name: beauty.character_hair.hair_name,
+            hair_base_color: beauty.character_hair.base_color,
+            hair_mix_color: beauty.character_hair.mix_color,
+            hair_mix_rate: Number(beauty.character_hair.mix_rate),
+            face_name: beauty.character_face.face_name,
+            face_base_color: beauty.character_face.base_color,
+            face_mix_color: beauty.character_face.mix_color,
+            face_mix_rate: Number(beauty.character_face.mix_rate),
+            skin_name: beauty.character_skin.skin_name,
+            skin_color_style: beauty.character_skin.color_style,
+            skin_hue: beauty.character_skin.hue,
+            skin_saturation: beauty.character_skin.saturation,
+            skin_brightness: beauty.character_skin.brightness,
+            coordi_hash: coordiHash,
+          })
+          .select("id")
+          .single();
+        if (insertError) throw new Error(insertError.message);
+
         if (items.length > 0) {
-          const { error: itemsError } = await supabase
-            .from("cash_items")
-            .upsert(items, { onConflict: "character_ocid,part" });
+          const itemsWithCharacterId = items.map((item) => ({ ...item, character_id: inserted.id }));
+          const { error: itemsError } = await supabase.from("cash_items").insert(itemsWithCharacterId);
           if (itemsError) throw new Error(itemsError.message);
         }
 
-        // 더 이상 착용하지 않는 부위(교체/해제된 아이템)는 남아있으면 안 되므로 정리한다.
-        let cleanup = supabase.from("cash_items").delete().eq("character_ocid", ocid);
-        if (items.length > 0) {
-          const wornParts = items.map((item) => `"${item.part}"`).join(",");
-          cleanup = cleanup.not("part", "in", `(${wornParts})`);
-        }
-        const { error: cleanupError } = await cleanup;
-        if (cleanupError) throw new Error(cleanupError.message);
-
         success++;
-        console.log(`[${i + 1}/${targets.length}] ${char.character_name} 저장 완료 (아이템 ${items.length}개)`);
+        console.log(`[${i + 1}/${targets.length}] ${char.character_name} 새 스냅샷 저장 (아이템 ${items.length}개)`);
       } catch (e) {
         fail++;
         console.error(`[${i + 1}/${targets.length}] ${char.character_name} 실패:`, e instanceof Error ? e.message : e);
@@ -332,8 +394,10 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
       await sleep(DELAY_MS);
     }
 
-    console.log(`\n완료: 성공 ${success} / 실패 ${fail} / 미분류로 건너뜀 ${skipped}`);
-    return { date, total: targets.length, success, fail, skipped };
+    console.log(
+      `\n완료: 새 스냅샷 ${success} / 변경 없음 ${unchanged} / 실패 ${fail} / 미분류로 건너뜀 ${skipped}`,
+    );
+    return { date, total: targets.length, success, fail, skipped, unchanged };
   } finally {
     isCrawlRunning = false;
   }

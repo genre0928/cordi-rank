@@ -1,8 +1,8 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 
 interface CoordiModalContextValue {
-  ocid: string | null;
-  open: (ocid: string) => void;
+  id: number | null;
+  open: (id: number) => void;
   close: () => void;
 }
 
@@ -13,8 +13,8 @@ const CoordiModalContext = createContext<CoordiModalContextValue | null>(null);
  * root.tsx에서 앱 전체를 감싸고, CoordiDetailModal이 이 상태를 읽어 렌더링한다.
  */
 export function CoordiModalProvider({ children }: { children: ReactNode }) {
-  const [ocid, setOcid] = useState<string | null>(null);
-  const value = useMemo(() => ({ ocid, open: setOcid, close: () => setOcid(null) }), [ocid]);
+  const [id, setId] = useState<number | null>(null);
+  const value = useMemo(() => ({ id, open: setId, close: () => setId(null) }), [id]);
 
   return <CoordiModalContext.Provider value={value}>{children}</CoordiModalContext.Provider>;
 }

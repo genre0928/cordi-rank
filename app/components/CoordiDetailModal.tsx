@@ -7,25 +7,25 @@ import type { loader } from "~/routes/coordi-detail";
 
 /**
  * 카드를 클릭했을 때 페이지 이동 없이 뜨는 상세 정보 모달.
- * /coordi/:ocid 라우트의 loader를 fetcher로 그대로 재사용해 데이터를 가져오고,
+ * /coordi/:id 라우트의 loader를 fetcher로 그대로 재사용해 데이터를 가져오고,
  * 화면은 페이지와 동일한 CoordiDetailContent로 그린다. 주소창 URL은 바뀌지 않는다.
  */
 export function CoordiDetailModal() {
-  const { ocid, close } = useCoordiModal();
+  const { id, close } = useCoordiModal();
   const fetcher = useFetcher<typeof loader>();
-  const loadedOcidRef = useRef<string | null>(null);
+  const loadedIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (ocid && loadedOcidRef.current !== ocid) {
-      loadedOcidRef.current = ocid;
-      fetcher.load(`/coordi/${ocid}`);
+    if (id && loadedIdRef.current !== id) {
+      loadedIdRef.current = id;
+      fetcher.load(`/coordi/${id}`);
     }
-    if (!ocid) loadedOcidRef.current = null;
+    if (!id) loadedIdRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ocid]);
+  }, [id]);
 
   useEffect(() => {
-    if (!ocid) return;
+    if (!id) return;
 
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -39,9 +39,9 @@ export function CoordiDetailModal() {
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [ocid, close]);
+  }, [id, close]);
 
-  if (!ocid) return null;
+  if (!id) return null;
 
   const data = fetcher.data;
 

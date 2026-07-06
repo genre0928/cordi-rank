@@ -1,4 +1,4 @@
-import { Sparkle } from "lucide-react";
+import { Heart, Sparkle } from "lucide-react";
 import { Link } from "react-router";
 
 export function Header() {
@@ -19,6 +19,13 @@ export function Header() {
             className="text-gray-600 transition hover:text-orange-500 dark:text-gray-300"
           >
             코디 랭킹
+          </Link>
+          <Link
+            to="/liked"
+            className="flex items-center gap-1 text-gray-600 transition hover:text-orange-500 dark:text-gray-300"
+          >
+            <Heart className="h-3.5 w-3.5" aria-hidden="true" />
+            내 좋아요
           </Link>
         </nav>
       </div>

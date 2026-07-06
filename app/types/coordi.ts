@@ -83,6 +83,9 @@ export interface SkinInfo {
 
 /** 넥슨 API 응답을 화면에서 쓰기 좋게 정규화한 코디 엔트리. */
 export interface CoordiEntry {
+  /** 이 코디 스냅샷의 고유 id. 라우팅/좋아요/React key 등 "이 코디 한 장"을 가리킬 때 쓴다. */
+  id: number;
+  /** 실제 캐릭터(넥슨 ocid). 같은 ocid로 여러 스냅샷(코디 변천사)이 있을 수 있어 더 이상 유니크하지 않다. */
   ocid: string;
   characterName: string;
   worldName: string;

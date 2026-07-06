@@ -44,7 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
 
   const likedMap = Object.fromEntries(
-    [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
+    [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.id, isLikedByUser(entry.id)]),
   );
 
   return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap };
@@ -105,10 +105,10 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           ) : (
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
               {displayResults.map((entry) => (
-                <li key={entry.ocid}>
+                <li key={entry.id}>
                   <CharacterImageCard
                     entry={entry}
-                    initiallyLiked={likedMap[entry.ocid] ?? false}
+                    initiallyLiked={likedMap[entry.id] ?? false}
                     linkToDetail
                   />
                 </li>

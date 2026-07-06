@@ -14,7 +14,7 @@ const PERIOD_OPTIONS: { value: RankingPeriod; label: string }[] = [
 interface RankingResponse {
   period: RankingPeriod;
   ranking: CoordiEntry[];
-  likedMap: Record<string, boolean>;
+  likedMap: Record<number, boolean>;
 }
 
 export function RankingSidebar({
@@ -24,7 +24,7 @@ export function RankingSidebar({
 }: {
   period: RankingPeriod;
   items: CoordiEntry[];
-  likedMap: Record<string, boolean>;
+  likedMap: Record<number, boolean>;
 }) {
   const fetcher = useFetcher<RankingResponse>();
 
@@ -86,11 +86,11 @@ export function RankingSidebar({
       ) : (
         <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-2">
           {items.map((entry, idx) => (
-            <li key={entry.ocid}>
+            <li key={entry.id}>
               <CharacterImageCard
                 entry={entry}
                 rank={idx + 4}
-                initiallyLiked={likedMap[entry.ocid] ?? false}
+                initiallyLiked={likedMap[entry.id] ?? false}
                 linkToDetail
                 showName
               />

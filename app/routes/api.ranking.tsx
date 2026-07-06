@@ -11,7 +11,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const period = (url.searchParams.get("period") as RankingPeriod) || "today";
 
   const ranking = await getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET);
-  const likedMap = Object.fromEntries(ranking.map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]));
+  const likedMap = Object.fromEntries(ranking.map((entry) => [entry.id, isLikedByUser(entry.id)]));
 
   return { period, ranking, likedMap };
 }

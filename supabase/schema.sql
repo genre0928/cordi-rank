@@ -1,9 +1,14 @@
--- 코디랭킹 초기 스키마
+-- 코디랭킹 스키마
 -- 부분 일치 검색(ILIKE) 성능을 위한 확장
 create extension if not exists pg_trgm;
 
+-- 캐릭터 한 명이 아니라 "코디 스냅샷" 한 장이 한 행이다. 같은 캐릭터(ocid)를 다시
+-- 크롤링했을 때 착용 조합이 바뀌었으면 새 행이 추가되고, 안 바뀌었으면 아무것도
+-- 쓰지 않는다(크롤러의 coordi_hash 비교로 판단). 그래서 ocid는 더 이상 유니크가
+-- 아니고, 같은 캐릭터의 코디 변천사가 여러 행으로 쌓인다.
 create table if not exists characters (
-  ocid text primary key,
+  id bigint generated always as identity primary key,
+  ocid text not null,
   character_name text not null,
   world_name text not null,
   -- 실제 API에는 남/여 외에 "기타"도 나올 수 있어(예: 넥슨 캐시샵 성별중립 캐릭터) 값을 강제하지 않는다.
@@ -28,18 +33,22 @@ create table if not exists characters (
   skin_hue integer,
   skin_saturation integer,
   skin_brightness integer,
+  -- 착용 조합 + 외형 커스터마이징을 합쳐 만든 서명. 같은 ocid의 최신 스냅샷과 비교해
+  -- 크롤러가 "코디가 바뀌었는지"를 값 하나로 빠르게 판단하는 데 쓴다.
+  coordi_hash text,
   like_count integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+create index if not exists characters_ocid_idx on characters (ocid);
 create index if not exists characters_like_count_idx on characters (like_count desc);
 create index if not exists characters_created_at_idx on characters (created_at desc);
 create index if not exists characters_gender_idx on characters (gender);
 
 create table if not exists cash_items (
   id bigint generated always as identity primary key,
-  character_ocid text not null references characters (ocid) on delete cascade,
+  character_id bigint not null references characters (id) on delete cascade,
   part text not null,
   name text not null,
   icon_url text,
@@ -51,14 +60,14 @@ create table if not exists cash_items (
   value integer
 );
 
-create index if not exists cash_items_character_ocid_idx on cash_items (character_ocid);
+create index if not exists cash_items_character_id_idx on cash_items (character_id);
 create index if not exists cash_items_name_trgm_idx on cash_items using gin (name gin_trgm_ops);
 
--- 크롤러가 delete+insert 대신 upsert를 쓸 수 있게, 캐릭터당 부위 하나는 항상 한 행만 있도록 강제한다.
+-- 스냅샷 하나(character_id)당 부위 하나는 항상 한 행만 있도록 강제한다.
 alter table cash_items
-  drop constraint if exists cash_items_ocid_part_unique;
+  drop constraint if exists cash_items_id_part_unique;
 alter table cash_items
-  add constraint cash_items_ocid_part_unique unique (character_ocid, part);
+  add constraint cash_items_id_part_unique unique (character_id, part);
 
 -- 읽기는 누구나(anon key), 쓰기는 service role 키로만 (RLS는 service role에 적용되지 않음)
 alter table characters enable row level security;

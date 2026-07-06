@@ -6,7 +6,7 @@ import type { CoordiEntry } from "~/types/coordi";
 
 /**
  * 코디 상세 화면의 본문(장비 그리드 + 캐릭터 정보 + 같은 아이템 코디).
- * /coordi/:ocid 풀 페이지와 카드 클릭 시 뜨는 모달이 이 컴포넌트를 함께 쓴다.
+ * /coordi/:id 풀 페이지와 카드 클릭 시 뜨는 모달이 이 컴포넌트를 함께 쓴다.
  */
 export function CoordiDetailContent({
   entry,
@@ -17,7 +17,7 @@ export function CoordiDetailContent({
   sameItemCoordi: CoordiEntry[];
   liked: boolean;
 }) {
-  const { liked: isLiked, count, toggle } = useLike(entry.ocid, liked, entry.likeCount);
+  const { liked: isLiked, count, toggle } = useLike(entry.id, liked, entry.likeCount);
 
   return (
     <div>
@@ -39,7 +39,7 @@ export function CoordiDetailContent({
           <h2 className="mb-3 text-base font-bold">같은 아이템을 착용한 코디</h2>
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {sameItemCoordi.map((item) => (
-              <li key={item.ocid}>
+              <li key={item.id}>
                 <CharacterImageCard entry={item} initiallyLiked={false} linkToDetail />
               </li>
             ))}

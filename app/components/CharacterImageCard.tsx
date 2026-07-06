@@ -41,7 +41,7 @@ export function CharacterImageCard({
   /** 랭킹 사이드바처럼 이미지 아래에 캐릭터 닉네임을 보여줄 때 사용 */
   showName?: boolean;
 }) {
-  const { liked, count, toggle } = useLike(entry.ocid, initiallyLiked, entry.likeCount);
+  const { liked, count, toggle } = useLike(entry.id, initiallyLiked, entry.likeCount);
   const { rows, transparentItems } = buildDisplayRows(entry);
   const hasAnyItem = rows.length > 0 || transparentItems.length > 0;
   const { open: openDetailModal } = useCoordiModal();
@@ -96,7 +96,7 @@ export function CharacterImageCard({
           {linkToDetail ? (
             <button
               type="button"
-              onClick={() => openDetailModal(entry.ocid)}
+              onClick={() => openDetailModal(entry.id)}
               aria-label={`${entry.characterName} 코디 상세보기`}
               className="block h-full w-full text-left"
             >

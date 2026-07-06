@@ -11,7 +11,7 @@ export function TopRankingBanner({
   likedMap,
 }: {
   items: CoordiEntry[];
-  likedMap: Record<string, boolean>;
+  likedMap: Record<number, boolean>;
 }) {
   if (items.length === 0) return null;
 
@@ -23,11 +23,11 @@ export function TopRankingBanner({
       </h2>
       <ul className="mt-3 grid grid-cols-3 gap-3">
         {items.map((entry, idx) => (
-          <li key={entry.ocid}>
+          <li key={entry.id}>
             <CharacterImageCard
               entry={entry}
               rank={idx + 1}
-              initiallyLiked={likedMap[entry.ocid] ?? false}
+              initiallyLiked={likedMap[entry.id] ?? false}
               linkToDetail
               showName
             />
