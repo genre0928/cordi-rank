@@ -104,6 +104,7 @@ interface FetchOptions {
   since?: Date;
   orderByLikes?: boolean;
   limit?: number;
+  offset?: number;
 }
 
 async function fetchCoordiEntries(opts: FetchOptions): Promise<CoordiEntry[]> {
@@ -115,7 +116,11 @@ async function fetchCoordiEntries(opts: FetchOptions): Promise<CoordiEntry[]> {
   if (opts.excludeOcid) query = query.neq("ocid", opts.excludeOcid);
   if (opts.since) query = query.gte("created_at", opts.since.toISOString());
   if (opts.orderByLikes) query = query.order("like_count", { ascending: false });
-  if (opts.limit) query = query.limit(opts.limit);
+  if (opts.offset) {
+    query = query.range(opts.offset, opts.offset + (opts.limit ?? 10) - 1);
+  } else if (opts.limit) {
+    query = query.limit(opts.limit);
+  }
 
   const { data: characterRows, error } = await query;
   if (error) throw new Error(`characters 조회 실패: ${error.message}`);
@@ -235,12 +240,17 @@ function periodCutoff(period: RankingPeriod): Date {
   return cutoff;
 }
 
-/** 좋아요를 받은 캐릭터 이미지 기준 랭킹 (오늘 / 이번 주 / 이번 달). */
-export async function getLikedRanking(period: RankingPeriod, limit = 10): Promise<CoordiEntry[]> {
+/** 좋아요를 받은 캐릭터 이미지 기준 랭킹 (오늘 / 이번 주 / 이번 달). offset을 주면 그만큼 건너뛴 순위부터 가져온다. */
+export async function getLikedRanking(
+  period: RankingPeriod,
+  limit = 10,
+  offset = 0,
+): Promise<CoordiEntry[]> {
   return fetchCoordiEntries({
     since: periodCutoff(period),
     orderByLikes: true,
     limit,
+    offset,
   });
 }
 
