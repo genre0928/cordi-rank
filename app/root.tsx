@@ -45,7 +45,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
       </head>
-      <body className="flex min-h-screen flex-col bg-orange-50/40 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100">
+      <body className="flex min-h-screen flex-col overflow-x-hidden bg-orange-50/40 text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100">
         <Header />
         <div className="flex-1">{children}</div>
         <Footer />

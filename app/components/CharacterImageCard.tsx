@@ -1,5 +1,5 @@
 import { Heart, Shirt } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CoordiPortrait } from "~/components/CoordiPortrait";
 import { RankBadge } from "~/components/RankBadge";
 import { useCoordiModal } from "~/context/coordi-modal";
@@ -22,7 +22,9 @@ const OVERLAY_GAP = 8;
  * 옆에 떠 있는 방식), 아이템이 많아도 잘리지 않는다.
  * 패널이 배지 오른쪽/왼쪽 중 어느 쪽으로 펼쳐질지는 hover 시점에 실제 남은 공간을 재서
  * 자동으로 정한다(모달/그리드가 몇 열이든, 카드가 맨 오른쪽에 있어도 화면 밖으로 잘리지 않음).
- * 그리드에서는 패널이 옆 카드 위로 넘어가므로, hover 중인 카드 전체의 z-index를
+ * 마우스가 없는 모바일/터치 환경에서는 hover가 아예 발생하지 않으므로, 배지를 탭하면
+ * 패널이 토글되고 바깥을 탭하면 닫히게 해서 데스크톱 hover와 동등하게 동작한다.
+ * 그리드에서는 패널이 옆 카드 위로 넘어가므로, hover/탭으로 열린 카드 전체의 z-index를
  * 올려(has-[...]:z-40) 옆 카드의 배지/좋아요 버튼에 가려지지 않게 한다.
  * 착용하지 않은 부위는 목록에서 제외하고(반지는 아예 크롤링하지 않음), 헤어/성형/
  * 피부도 함께 보여준다. "투명 OO" 아이템은 이름 대신 맨 아래에 아이콘 한 줄로 모은다.
@@ -49,6 +51,7 @@ export function CharacterImageCard({
 
   const triggerRef = useRef<HTMLDivElement>(null);
   const [overlayAlign, setOverlayAlign] = useState<"right" | "left">("right");
+  const [forceShow, setForceShow] = useState(false);
 
   function updateOverlayAlign() {
     const el = triggerRef.current;
@@ -62,8 +65,24 @@ export function CharacterImageCard({
     setOverlayAlign(spaceOnRight < OVERLAY_PANEL_WIDTH + OVERLAY_GAP ? "left" : "right");
   }
 
+  function handleBadgeClick(event: React.MouseEvent) {
+    event.stopPropagation();
+    updateOverlayAlign();
+    setForceShow((current) => !current);
+  }
+
+  // 모바일에서 패널을 연 채로 바깥을 탭하면 닫히게 한다.
+  useEffect(() => {
+    if (!forceShow) return;
+    function handleOutsideClick(event: MouseEvent) {
+      if (!triggerRef.current?.contains(event.target as Node)) setForceShow(false);
+    }
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [forceShow]);
+
   return (
-    <div className="relative has-[.info-trigger:hover]:z-40">
+    <div className="relative has-[.info-trigger:hover]:z-40 has-[.info-trigger[data-open=true]]:z-40">
       <div className="relative aspect-[3/4] w-full">
         <div className="absolute inset-0 overflow-hidden rounded-xl border border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
           {rank !== undefined && <RankBadge rank={rank} />}
@@ -100,18 +119,26 @@ export function CharacterImageCard({
         {hasAnyItem && (
           <div
             ref={triggerRef}
+            data-open={forceShow}
             className="info-trigger group/info absolute right-2 top-2 z-30"
             onMouseEnter={updateOverlayAlign}
             onFocus={updateOverlayAlign}
           >
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur">
+            <button
+              type="button"
+              onClick={handleBadgeClick}
+              aria-pressed={forceShow}
+              aria-label="착용 아이템 정보 보기"
+              className="flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur"
+            >
               <Shirt className="h-3.5 w-3.5" aria-hidden="true" />
-            </div>
+            </button>
 
             <div
               className={cn(
                 "pointer-events-none absolute top-0 z-30 w-56 max-w-[80vw] rounded-lg bg-black/90 p-2.5 opacity-0 shadow-xl transition-opacity duration-150 group-hover/info:opacity-100",
                 overlayAlign === "right" ? "left-full ml-1" : "right-full mr-1",
+                forceShow && "opacity-100",
               )}
             >
               <ul className="space-y-1 text-[11px] leading-tight text-white">

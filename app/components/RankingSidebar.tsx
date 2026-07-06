@@ -89,7 +89,7 @@ export function RankingSidebar({
             <li key={entry.ocid}>
               <CharacterImageCard
                 entry={entry}
-                rank={idx + 1}
+                rank={idx + 4}
                 initiallyLiked={likedMap[entry.ocid] ?? false}
                 linkToDetail
                 showName

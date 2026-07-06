@@ -14,11 +14,11 @@ function SlotBox({ slot }: { slot: GridSlot }) {
   const appearanceIconUrl = APPEARANCE_ICON_URLS[slot.key];
 
   return (
-    <div className="group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 sm:h-14 sm:w-14">
+    <div className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 sm:h-14 sm:w-14">
       {slot.iconUrl ? (
-        <img src={slot.iconUrl} alt={slot.name ?? slot.label} className="h-6 w-6 object-contain sm:h-9 sm:w-9" />
+        <img src={slot.iconUrl} alt={slot.name ?? slot.label} className="h-5 w-5 object-contain sm:h-9 sm:w-9" />
       ) : slot.name && appearanceIconUrl ? (
-        <img src={appearanceIconUrl} alt={slot.name} className="h-6 w-6 object-contain sm:h-9 sm:w-9" />
+        <img src={appearanceIconUrl} alt={slot.name} className="h-5 w-5 object-contain sm:h-9 sm:w-9" />
       ) : (
         <span className="px-0.5 text-center text-[7px] font-bold leading-tight text-gray-400 dark:text-gray-600 sm:text-[9px]">
           {slot.label}
@@ -54,15 +54,15 @@ export function EquipmentGrid({ entry }: { entry: CoordiEntry }) {
   const { left, right, appearance } = buildEquipmentGridLayout(entry);
 
   return (
-    <div className="flex flex-col items-center gap-2 sm:gap-3">
-      <div className="flex max-w-full items-start justify-center gap-1.5 overflow-x-auto px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-3 [&::-webkit-scrollbar]:hidden">
+    <div className="flex flex-col items-center gap-2 pt-1 sm:gap-3">
+      <div className="flex items-start justify-center gap-1 sm:gap-3">
         <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
           {left.map((slot) => (
             <SlotBox key={slot.key} slot={slot} />
           ))}
         </div>
 
-        <div className="aspect-[3/4] w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 sm:w-40">
+        <div className="aspect-[3/4] w-16 shrink-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 sm:w-40">
           <CoordiPortrait entry={entry} />
         </div>
 

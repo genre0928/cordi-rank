@@ -210,6 +210,9 @@ export function ItemSearchForm({
                 />
                 <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
                   {suggestion.name}
+                  {suggestion.genderLabel && (
+                    <span className="text-gray-400 dark:text-gray-500"> ({suggestion.genderLabel})</span>
+                  )}
                 </span>
                 <span
                   className={cn(

@@ -8,8 +8,9 @@
  *
  * 실제 API 키로 /character/cashitem-equipment를 직접 호출해 확인한 결과, 응답에 나오는
  * cash_item_equipment_part는 모자/얼굴장식/눈장식/귀고리/반지/신발/장갑/망토/무기/방패/한벌옷
- * 뿐이었다 (헤어/성형/피부, 펫/펫장비 등은 이 엔드포인트에 없음). 반지는 캐릭터 이미지에
- * 렌더링되지 않아 크롤링 자체에서 제외하므로, 자동완성에서도 노출하지 않는다.
+ * 뿐이었다 (헤어/성형/피부, 펫/펫장비 등은 이 엔드포인트에 없음). 반지와 "투명 OO"류(빈
+ * 슬롯 placeholder)는 캐릭터 이미지에 실질적으로 안 보이거나 크롤링 대상이 아니므로
+ * 자동완성에서도 노출하지 않는다.
  */
 
 const MAPLESTORY_IO_BASE = "https://maplestory.io/api/KMS/389";
@@ -34,15 +35,49 @@ const ALLOWED_SUB_CATEGORIES = new Set([
 
 function isRealCashEquipment(item: MapleStoryIoItem): boolean {
   if (!item.isCash || item.typeInfo?.overallCategory !== "Equip") return false;
+  if (item.name.startsWith("투명")) return false;
   const category = item.typeInfo.category ?? "";
   const subCategory = item.typeInfo.subCategory ?? "";
   return WEAPON_CATEGORIES.has(category) || ALLOWED_SUB_CATEGORIES.has(subCategory);
 }
 
+/**
+ * 같은 이름으로 여러 아이템 ID가 검색되는 경우(예: "투명 방패"가 설명 없는 것/있는 것
+ * 두 개 ID로 존재)가 있다. 설명(desc)이 있는 쪽이 실제로 쓰이는 항목이므로, 그게 하나라도
+ * 있으면 desc 없는 나머지는 버린다. 성별별로 묶어서 처리하므로, "메소레인저 블랙 헬멧"처럼
+ * 이름은 같아도 성별이 다른(둘 다 desc가 없어도) 진짜 별개 아이템은 서로를 지우지 않는다.
+ * 성별까지 같고 desc만 다른 "웨딩 드레스"류는 desc 있는 쪽만 남는다.
+ */
+function dedupeByName(items: MapleStoryIoItem[]): MapleStoryIoItem[] {
+  const groups = new Map<string, MapleStoryIoItem[]>();
+  for (const item of items) {
+    const key = `${item.name}|${item.requiredGender ?? ""}`;
+    const group = groups.get(key) ?? [];
+    group.push(item);
+    groups.set(key, group);
+  }
+
+  const result: MapleStoryIoItem[] = [];
+  for (const group of groups.values()) {
+    const withDesc = group.filter((item) => (item.desc ?? "").trim().length > 0);
+    result.push(...(withDesc.length > 0 ? withDesc : group.slice(0, 1)));
+  }
+  return result;
+}
+
+/** requiredGender: 0=남, 1=여, 3=공용(표시 안 함). 그 외 값도 표시하지 않는다. */
+function toGenderLabel(requiredGender: number | undefined): "남" | "여" | null {
+  if (requiredGender === 0) return "남";
+  if (requiredGender === 1) return "여";
+  return null;
+}
+
 interface MapleStoryIoItem {
   id: number;
   name: string;
+  desc?: string;
   isCash?: boolean;
+  requiredGender?: number;
   typeInfo?: {
     overallCategory?: string;
     category?: string;
@@ -54,6 +89,8 @@ export interface ItemSuggestion {
   id: number;
   name: string;
   iconUrl: string;
+  /** "남"/"여"만 표시하고, 공용(3)이거나 알 수 없는 값이면 null (표시 안 함). */
+  genderLabel: "남" | "여" | null;
   /** 이 아이템을 실제로 착용 중인 캐릭터 수. /api/item-suggestions 라우트에서 DB 조회 후 채워진다. */
   wearerCount?: number;
 }
@@ -77,13 +114,13 @@ export async function searchItemSuggestions(
     return [];
   }
 
-  return items
-    .filter(isRealCashEquipment)
+  return dedupeByName(items.filter(isRealCashEquipment))
     .slice(0, limit)
     .map((item) => ({
       id: item.id,
       name: item.name,
       iconUrl: `${MAPLESTORY_IO_BASE}/item/${item.id}/icon`,
+      genderLabel: toGenderLabel(item.requiredGender),
     }));
 }
 

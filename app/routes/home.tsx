@@ -4,6 +4,7 @@ import { isLikeAction } from "~/lib/should-revalidate";
 import { CharacterImageCard } from "~/components/CharacterImageCard";
 import { ItemSearchForm } from "~/components/ItemSearchForm";
 import { RankingSidebar } from "~/components/RankingSidebar";
+import { TopRankingBanner } from "~/components/TopRankingBanner";
 import { decodeItemEntry } from "~/lib/item-search-params";
 import {
   getLikedRanking,
@@ -14,7 +15,10 @@ import {
 import type { GenderFilter, ItemSearchEntry, RankingPeriod } from "~/types/coordi";
 import type { Route } from "./+types/home";
 
-const RANKING_LIMIT = 10;
+/** 사이드바 랭킹 섹션에 노출할 순위 범위(4~10위). 1~3위는 TopRankingBanner가 담당한다. */
+const RANKING_OFFSET = 3;
+const RANKING_LIMIT = 7;
+const TOP_BANNER_LIMIT = 3;
 const RANDOM_SAMPLE_SIZE = 20;
 
 function parseItems(searchParams: URLSearchParams): ItemSearchEntry[] {
@@ -31,18 +35,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const period = (url.searchParams.get("period") as RankingPeriod) || "today";
   const hasSearched = items.length > 0;
 
-  const [displayResults, ranking] = await Promise.all([
+  const [displayResults, ranking, topRanking] = await Promise.all([
     hasSearched
       ? searchCoordiByItems({ items, gender })
       : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
-    getLikedRanking(period, RANKING_LIMIT),
+    getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET),
+    getLikedRanking("weekly", TOP_BANNER_LIMIT),
   ]);
 
   const likedMap = Object.fromEntries(
-    [...displayResults, ...ranking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
+    [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
   );
 
-  return { items, gender, period, hasSearched, displayResults, ranking, likedMap };
+  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -70,7 +75,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, period, hasSearched, displayResults, ranking, likedMap } = loaderData;
+  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap } = loaderData;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
@@ -82,6 +87,8 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             보여드려요.
           </p>
         </div>
+
+        <TopRankingBanner items={topRanking} likedMap={likedMap} />
 
         <ItemSearchForm initialItems={items} initialGender={gender} />
 
