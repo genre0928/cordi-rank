@@ -1,0 +1,21 @@
+name: 코디 크롤링 스케줄러
+
+# Vercel Hobby 플랜은 자체 Cron을 하루 1번으로 제한한다. 크롤 로직 자체(/api/cron/crawl)는
+# 이미 CRON_SECRET으로 보호된 평범한 HTTP 엔드포인트라, Vercel Cron 대신 여기서 하루
+# 여러 번 호출해서 하루 수집량을 늘린다. Vercel 쪽 코드/설정은 전혀 건드리지 않는다.
+on:
+  schedule:
+    # 3시간마다(하루 8번) 실행. 필요하면 간격만 바꾸면 된다.
+    - cron: "0 */3 * * *"
+  # Actions 탭에서 수동으로도 바로 실행해볼 수 있게.
+  workflow_dispatch: {}
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 크롤 엔드포인트 호출
+        run: |
+          curl -sS -f \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.CRAWL_URL }}/api/cron/crawl"
