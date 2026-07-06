@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import { CoordiPortrait } from "~/components/CoordiPortrait";
 import { buildEquipmentGridLayout, type GridSlot } from "~/lib/coordi-display-rows";
+import { cn } from "~/lib/cn";
 import { FACE_ICON_URL, HAIR_ICON_URL, PRISM_ICON_URL, SKIN_ICON_URL } from "~/services/item-catalog-service";
 import type { CoordiEntry } from "~/types/coordi";
 
@@ -12,9 +14,32 @@ const APPEARANCE_ICON_URLS: Record<string, string> = {
 
 function SlotBox({ slot }: { slot: GridSlot }) {
   const appearanceIconUrl = APPEARANCE_ICON_URLS[slot.key];
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [forceShow, setForceShow] = useState(false);
+
+  // 마우스가 없는 모바일/터치 환경에서는 hover가 발생하지 않으므로, 슬롯을 탭하면
+  // 이름 툴팁이 토글되고 바깥을 탭하면 닫히게 해서 데스크톱 hover와 동등하게 동작한다.
+  useEffect(() => {
+    if (!forceShow) return;
+    function handleOutsideClick(event: MouseEvent) {
+      if (!boxRef.current?.contains(event.target as Node)) setForceShow(false);
+    }
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [forceShow]);
+
+  function handleClick(event: React.MouseEvent) {
+    if (!slot.name) return;
+    event.stopPropagation();
+    setForceShow((current) => !current);
+  }
 
   return (
-    <div className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 sm:h-14 sm:w-14">
+    <div
+      ref={boxRef}
+      onClick={handleClick}
+      className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 sm:h-14 sm:w-14"
+    >
       {slot.iconUrl ? (
         <img src={slot.iconUrl} alt={slot.name ?? slot.label} className="h-5 w-5 object-contain sm:h-9 sm:w-9" />
       ) : slot.name && appearanceIconUrl ? (
@@ -34,7 +59,12 @@ function SlotBox({ slot }: { slot: GridSlot }) {
       )}
 
       {slot.name && (
-        <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-max max-w-[180px] -translate-x-1/2 rounded bg-black/90 px-2 py-1 text-center text-[11px] leading-tight text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+        <div
+          className={cn(
+            "pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-max max-w-[180px] -translate-x-1/2 rounded bg-black/90 px-2 py-1 text-center text-[11px] leading-tight text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100",
+            forceShow && "opacity-100",
+          )}
+        >
           {slot.name}
           {slot.extra && <div className="text-orange-200">{slot.extra}</div>}
         </div>

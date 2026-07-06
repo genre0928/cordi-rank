@@ -9,9 +9,6 @@ import { cn } from "~/lib/cn";
 import { PRISM_ICON_URL } from "~/services/item-catalog-service";
 import type { CoordiEntry } from "~/types/coordi";
 
-/** 정보 패널의 고정 폭(w-56)과 여백. 오른쪽 공간이 이보다 부족하면 패널을 왼쪽으로 뒤집는다. */
-const OVERLAY_PANEL_WIDTH = 224;
-const OVERLAY_GAP = 8;
 
 /**
  * 이름/레벨/직업 같은 상세 정보 없이 이미지와 좋아요만 노출하는 단순 카드.
@@ -60,9 +57,13 @@ export function CharacterImageCard({
     // 모달 안이면 뷰포트가 아니라 모달 박스 경계를 기준으로 남은 공간을 재야 한다.
     const dialog = el.closest('[role="dialog"]');
     const container = dialog?.querySelector<HTMLElement>(":scope > div") ?? document.documentElement;
-    const containerRight = container.getBoundingClientRect().right;
-    const spaceOnRight = containerRight - rect.right;
-    setOverlayAlign(spaceOnRight < OVERLAY_PANEL_WIDTH + OVERLAY_GAP ? "left" : "right");
+    const containerRect = container.getBoundingClientRect();
+    const spaceOnRight = containerRect.right - rect.right;
+    const spaceOnLeft = rect.left - containerRect.left;
+    // 절대 여유 공간이 아니라 좌/우 중 더 넓은 쪽으로 편다. 모바일 2열 그리드처럼 컨테이너
+    // 전체 폭 기준으로는 양쪽 다 패널 폭보다 좁은 경우에도, 왼쪽 카드는 오른쪽으로(옆 카드
+    // 위로), 오른쪽 카드는 왼쪽으로 펼쳐져야 자연스럽기 때문이다.
+    setOverlayAlign(spaceOnRight >= spaceOnLeft ? "right" : "left");
   }
 
   function handleBadgeClick(event: React.MouseEvent) {
