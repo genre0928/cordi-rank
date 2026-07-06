@@ -7,6 +7,7 @@ import { RankingSidebar } from "~/components/RankingSidebar";
 import { TopRankingBanner } from "~/components/TopRankingBanner";
 import { decodeItemEntry } from "~/lib/item-search-params";
 import {
+  getCoordiStats,
   getLikedRanking,
   getRandomCoordi,
   isLikedByUser,
@@ -28,6 +29,19 @@ function parseItems(searchParams: URLSearchParams): ItemSearchEntry[] {
     .filter((entry): entry is ItemSearchEntry => entry !== null);
 }
 
+/** "15시 24분"처럼 한국 시간 기준 시:분만 뽑아낸다. */
+function formatUpdatedAt(iso: string): string {
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  }).formatToParts(new Date(iso));
+  const hour = parts.find((part) => part.type === "hour")?.value ?? "00";
+  const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+  return `${hour}시 ${minute}분`;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const items = parseItems(url.searchParams);
@@ -35,19 +49,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   const period = (url.searchParams.get("period") as RankingPeriod) || "today";
   const hasSearched = items.length > 0;
 
-  const [displayResults, ranking, topRanking] = await Promise.all([
+  const [displayResults, ranking, topRanking, stats] = await Promise.all([
     hasSearched
       ? searchCoordiByItems({ items, gender })
       : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
     getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET),
     getLikedRanking("weekly", TOP_BANNER_LIMIT),
+    getCoordiStats(),
   ]);
 
   const likedMap = Object.fromEntries(
     [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.id, isLikedByUser(entry.id)]),
   );
 
-  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap };
+  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap, stats };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -75,7 +90,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap } = loaderData;
+  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap, stats } = loaderData;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
@@ -94,10 +109,16 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
         <div className="mt-6">
           {!hasSearched && (
-            <p className="mb-3 flex items-center gap-1.5 text-sm text-gray-400">
-              <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
-              무작위로 뽑아본 코디예요. 새로고침을 누르면 다른 코디를 볼 수 있어요.
-            </p>
+            <div className="mb-3 space-y-1">
+              <p className="flex items-center gap-1.5 text-sm text-gray-400">
+                <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
+                무작위로 뽑아본 코디예요. 새로고침을 누르면 다른 코디를 볼 수 있어요.
+              </p>
+              <p className="text-xs text-gray-400">
+                현재 캐릭터 갯수 : {stats.totalCount.toLocaleString("ko-KR")}개
+                {stats.lastUpdatedAt && ` (최근 업데이트 ${formatUpdatedAt(stats.lastUpdatedAt)})`}
+              </p>
+            </div>
           )}
 
           {hasSearched && displayResults.length === 0 ? (

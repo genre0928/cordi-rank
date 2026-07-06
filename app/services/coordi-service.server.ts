@@ -80,6 +80,27 @@ interface CashItemRow {
   value: number | null;
 }
 
+/** Supabase 프로젝트 설정상 select 한 번에 돌아오는 행 수 기본 상한(보통 1000)보다
+ * 넉넉히 낮게 잡은 페이지 크기. 이 한도를 넘는 select는 에러 없이 조용히 잘려서 오므로,
+ * cash_items처럼 행이 많이 쌓이는 조회는 항상 이 헬퍼로 끝까지 이어받아야 한다. */
+const SUPABASE_PAGE_SIZE = 500;
+
+async function selectAllRows<T>(
+  label: string,
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(from, from + SUPABASE_PAGE_SIZE - 1);
+    if (error) throw new Error(`${label} 실패: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+  return rows;
+}
+
 function toCoordiEntry(row: CharacterRow, items: CashItem[]): CoordiEntry {
   return {
     id: row.id,
@@ -135,14 +156,12 @@ async function fetchCoordiEntries(opts: FetchOptions): Promise<CoordiEntry[]> {
   if (!characterRows || characterRows.length === 0) return [];
 
   const ids = characterRows.map((row) => row.id);
-  const { data: itemRows, error: itemsError } = await supabase
-    .from("cash_items")
-    .select("*")
-    .in("character_id", ids);
-  if (itemsError) throw new Error(`cash_items 조회 실패: ${itemsError.message}`);
+  const itemRows = await selectAllRows<CashItemRow>("cash_items 조회", (from, to) =>
+    supabase.from("cash_items").select("*").in("character_id", ids).range(from, to),
+  );
 
   const itemsById = new Map<number, CashItem[]>();
-  for (const row of (itemRows ?? []) as CashItemRow[]) {
+  for (const row of itemRows) {
     const list = itemsById.get(row.character_id) ?? [];
     list.push({
       part: row.part as CashItem["part"],
@@ -165,13 +184,15 @@ const RANDOM_POOL_LIMIT = 500;
 
 async function idsMatchingCondition(keyword: string, prismOnly: boolean): Promise<Set<number>> {
   // prismOnly는 켜짐/꺼짐 둘 다 조건이다: 켜짐이면 프리즘 적용 아이템만, 꺼짐이면 프리즘 미적용 아이템만.
-  const { data, error } = await supabase
-    .from("cash_items")
-    .select("character_id")
-    .ilike("name", `%${keyword}%`)
-    .eq("prism_applied", prismOnly);
-  if (error) throw new Error(`아이템 검색 실패: ${error.message}`);
-  return new Set((data ?? []).map((row) => row.character_id as number));
+  const rows = await selectAllRows<{ character_id: number }>("아이템 검색", (from, to) =>
+    supabase
+      .from("cash_items")
+      .select("character_id")
+      .ilike("name", `%${keyword}%`)
+      .eq("prism_applied", prismOnly)
+      .range(from, to),
+  );
+  return new Set(rows.map((row) => row.character_id));
 }
 
 /**
@@ -183,14 +204,21 @@ async function idsMatchingCondition(keyword: string, prismOnly: boolean): Promis
 export async function countWearersByItemNames(names: string[]): Promise<Record<string, number>> {
   if (names.length === 0) return {};
 
-  const { data, error } = await supabase
-    .from("cash_items")
-    .select("name, characters!inner(ocid)")
-    .in("name", names);
-  if (error) throw new Error(`아이템 착용자 수 조회 실패: ${error.message}`);
+  const rows = await selectAllRows<{ name: string; characters: { ocid: string } }>(
+    "아이템 착용자 수 조회",
+    (from, to) =>
+      supabase
+        .from("cash_items")
+        .select("name, characters!inner(ocid)")
+        .in("name", names)
+        .range(from, to) as unknown as PromiseLike<{
+        data: { name: string; characters: { ocid: string } }[] | null;
+        error: { message: string } | null;
+      }>,
+  );
 
   const ocidsByName = new Map<string, Set<string>>();
-  for (const row of (data ?? []) as unknown as { name: string; characters: { ocid: string } }[]) {
+  for (const row of rows) {
     const set = ocidsByName.get(row.name) ?? new Set<string>();
     set.add(row.characters.ocid);
     ocidsByName.set(row.name, set);
@@ -224,6 +252,31 @@ export async function searchCoordiByItems({
     orderByLikes: true,
     limit: MAX_SEARCH_RESULTS,
   });
+}
+
+export interface CoordiStats {
+  /** 현재 저장된 코디 스냅샷(characters 행) 총 개수. */
+  totalCount: number;
+  /** 가장 최근에 새로 쌓인 스냅샷의 시각(크롤이 새 코디를 발견한 시점). 하나도 없으면 null. */
+  lastUpdatedAt: string | null;
+}
+
+/** 홈 화면에 "현재 캐릭터 개수 / 최근 업데이트 시각"을 보여주기 위한 통계. */
+export async function getCoordiStats(): Promise<CoordiStats> {
+  const { count, error: countError } = await supabase
+    .from("characters")
+    .select("*", { count: "exact", head: true });
+  if (countError) throw new Error(`캐릭터 수 조회 실패: ${countError.message}`);
+
+  const { data: latestRow, error: latestError } = await supabase
+    .from("characters")
+    .select("created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestError) throw new Error(`최근 업데이트 조회 실패: ${latestError.message}`);
+
+  return { totalCount: count ?? 0, lastUpdatedAt: latestRow?.created_at ?? null };
 }
 
 /** 검색 조건이 없을 때 기본 화면에 보여줄 무작위 코디 샘플. 스냅샷 단위로 무작위 추출하므로
@@ -296,21 +349,17 @@ export async function getCoordiWithSharedItems(entry: CoordiEntry, limit = 4): P
   );
   if (itemNames.length === 0) return [];
 
-  const { data, error } = await supabase.from("cash_items").select("character_id").in("name", itemNames);
-  if (error) throw new Error(`동일 아이템 캐릭터 조회 실패: ${error.message}`);
-
-  const candidateIds = [...new Set((data ?? []).map((row) => row.character_id as number))];
+  const itemRows = await selectAllRows<{ character_id: number }>("동일 아이템 캐릭터 조회", (from, to) =>
+    supabase.from("cash_items").select("character_id").in("name", itemNames).range(from, to),
+  );
+  const candidateIds = [...new Set(itemRows.map((row) => row.character_id))];
   if (candidateIds.length === 0) return [];
 
-  const { data: characterRows, error: charError } = await supabase
-    .from("characters")
-    .select("id, ocid")
-    .in("id", candidateIds);
-  if (charError) throw new Error(`캐릭터 조회 실패: ${charError.message}`);
+  const characterRows = await selectAllRows<{ id: number; ocid: string }>("캐릭터 조회", (from, to) =>
+    supabase.from("characters").select("id, ocid").in("id", candidateIds).range(from, to),
+  );
 
-  const otherIds = (characterRows ?? [])
-    .filter((row) => row.ocid !== entry.ocid)
-    .map((row) => row.id as number);
+  const otherIds = characterRows.filter((row) => row.ocid !== entry.ocid).map((row) => row.id);
   if (otherIds.length === 0) return [];
 
   return fetchCoordiEntries({ ids: otherIds, orderByLikes: true, limit });
