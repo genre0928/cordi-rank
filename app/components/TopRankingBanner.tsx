@@ -2,10 +2,7 @@ import { Crown } from "lucide-react";
 import { CharacterImageCard } from "~/components/CharacterImageCard";
 import type { CoordiEntry } from "~/types/coordi";
 
-/**
- * 검색창 위에 노출되는 이번 주 좋아요 상위 1~3위 배너.
- * 기존 사이드바 랭킹 섹션은 이 배너와 중복되지 않도록 4~10위만 보여준다.
- */
+/** 검색창 위에 노출되는 이번 주 좋아요 상위 1~3위 배너. */
 export function TopRankingBanner({
   items,
   likedMap,
@@ -21,9 +18,9 @@ export function TopRankingBanner({
         <Crown className="h-4 w-4" aria-hidden="true" />
         이번 주 좋아요 TOP 3
       </h2>
-      <ul className="mt-3 grid grid-cols-3 gap-3">
+      <ul className="mt-3 flex gap-3">
         {items.map((entry, idx) => (
-          <li key={entry.ocid}>
+          <li key={entry.ocid} className="w-20">
             <CharacterImageCard
               entry={entry}
               rank={idx + 1}

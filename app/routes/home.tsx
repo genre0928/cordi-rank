@@ -3,21 +3,12 @@ import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { isLikeAction } from "~/lib/should-revalidate";
 import { CharacterImageCard } from "~/components/CharacterImageCard";
 import { ItemSearchForm } from "~/components/ItemSearchForm";
-import { RankingSidebar } from "~/components/RankingSidebar";
 import { TopRankingBanner } from "~/components/TopRankingBanner";
 import { decodeItemEntry } from "~/lib/item-search-params";
-import {
-  getLikedRanking,
-  getRandomCoordi,
-  isLikedByUser,
-  searchCoordiByItems,
-} from "~/services/coordi-service.server";
-import type { GenderFilter, ItemSearchEntry, RankingPeriod } from "~/types/coordi";
+import { getLikedRanking, getRandomCoordi, isLikedByUser, searchCoordiByItems } from "~/services/coordi-service.server";
+import type { GenderFilter, ItemSearchEntry } from "~/types/coordi";
 import type { Route } from "./+types/home";
 
-/** 사이드바 랭킹 섹션에 노출할 순위 범위(4~10위). 1~3위는 TopRankingBanner가 담당한다. */
-const RANKING_OFFSET = 3;
-const RANKING_LIMIT = 7;
 const TOP_BANNER_LIMIT = 3;
 const RANDOM_SAMPLE_SIZE = 20;
 
@@ -32,22 +23,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const items = parseItems(url.searchParams);
   const gender = (url.searchParams.get("gender") as GenderFilter) || "all";
-  const period = (url.searchParams.get("period") as RankingPeriod) || "today";
   const hasSearched = items.length > 0;
 
-  const [displayResults, ranking, topRanking] = await Promise.all([
+  const [displayResults, topRanking] = await Promise.all([
     hasSearched
       ? searchCoordiByItems({ items, gender })
       : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
-    getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET),
     getLikedRanking("weekly", TOP_BANNER_LIMIT),
   ]);
 
   const likedMap = Object.fromEntries(
-    [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
+    [...displayResults, ...topRanking].map((entry) => [entry.ocid, isLikedByUser(entry.ocid)]),
   );
 
-  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap };
+  return { items, gender, hasSearched, displayResults, topRanking, likedMap };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -75,50 +64,42 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap } = loaderData;
+  const { items, gender, hasSearched, displayResults, topRanking, likedMap } = loaderData;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
-      <section>
-        <div className="mb-6">
-          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">아이템으로 코디 찾기</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            아이템 이름을 입력하고 Enter를 누르면 그 아이템을 착용한 캐릭터의 코디 이미지를 모아
-            보여드려요.
+    <main className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-black tracking-tight sm:text-3xl">아이템으로 코디 찾기</h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          아이템 이름을 입력하고 Enter를 누르면 그 아이템을 착용한 캐릭터의 코디 이미지를 모아
+          보여드려요.
+        </p>
+      </div>
+
+      <TopRankingBanner items={topRanking} likedMap={likedMap} />
+
+      <ItemSearchForm initialItems={items} initialGender={gender} />
+
+      <div className="mt-6">
+        {!hasSearched && (
+          <p className="mb-3 flex items-center gap-1.5 text-sm text-gray-400">
+            <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
+            무작위로 뽑아본 코디예요. 새로고침을 누르면 다른 코디를 볼 수 있어요.
           </p>
-        </div>
+        )}
 
-        <TopRankingBanner items={topRanking} likedMap={likedMap} />
-
-        <ItemSearchForm initialItems={items} initialGender={gender} />
-
-        <div className="mt-6">
-          {!hasSearched && (
-            <p className="mb-3 flex items-center gap-1.5 text-sm text-gray-400">
-              <Shuffle className="h-3.5 w-3.5" aria-hidden="true" />
-              무작위로 뽑아본 코디예요. 새로고침을 누르면 다른 코디를 볼 수 있어요.
-            </p>
-          )}
-
-          {hasSearched && displayResults.length === 0 ? (
-            <p className="py-16 text-center text-gray-400">조건에 맞는 코디를 찾지 못했어요.</p>
-          ) : (
-            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
-              {displayResults.map((entry) => (
-                <li key={entry.ocid}>
-                  <CharacterImageCard
-                    entry={entry}
-                    initiallyLiked={likedMap[entry.ocid] ?? false}
-                    linkToDetail
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <RankingSidebar period={period} items={ranking} likedMap={likedMap} />
+        {hasSearched && displayResults.length === 0 ? (
+          <p className="py-16 text-center text-gray-400">조건에 맞는 코디를 찾지 못했어요.</p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
+            {displayResults.map((entry) => (
+              <li key={entry.ocid}>
+                <CharacterImageCard entry={entry} initiallyLiked={likedMap[entry.ocid] ?? false} linkToDetail />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </main>
   );
 }
