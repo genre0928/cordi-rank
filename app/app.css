@@ -9,6 +9,11 @@ html {
   /* 뷰포트 메타의 user-scalable=no는 iOS Safari(10+)가 접근성 이유로 무시하므로,
      핀치 줌(확대/축소) 제스처 자체를 여기서 막는다. 스크롤(pan)은 그대로 허용된다. */
   touch-action: pan-x pan-y;
+  /* body에만 overflow-x-hidden을 주면 iOS Safari에서는 html 레벨의 좌우 러버밴드
+     드래그까지는 막지 못해, 카드의 숨겨진(opacity-0) 아이템 정보 패널이 화면 밖으로
+     걸쳐 있을 때 여전히 옆으로 밀렸다. html에도 명시해야 실제로 막힌다. */
+  overflow-x: hidden;
+  width: 100%;
 
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;

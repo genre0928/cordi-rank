@@ -47,7 +47,13 @@ export function CharacterImageCard({
   const { open: openDetailModal } = useCoordiModal();
 
   const triggerRef = useRef<HTMLDivElement>(null);
-  const [overlayAlign, setOverlayAlign] = useState<"right" | "left">("right");
+  // 상호작용 전 기본값은 "left"(왼쪽으로 펼침 = right-full로 카드 왼쪽 밖에 위치)여야 한다.
+  // "right"를 기본값으로 두면 상호작용하지 않은 모든 카드의 숨겨진(opacity-0) 패널이
+  // 카드 오른쪽 밖(양의 x 방향)으로 걸쳐 있게 되고, 이게 페이지 전체의 scrollWidth를
+  // 늘려서 모바일에서 실제로 좌우로 밀리는 원인이 됐다. "left"가 기본이면 숨겨진 패널이
+  // 왼쪽(음의 x 방향)으로 걸치는데, 이쪽은 scrollWidth에 영향을 주지 않는다. 실제 보여줄
+  // 때는 hover/탭 시점에 updateOverlayAlign이 다시 계산하므로 최종 위치는 항상 정확하다.
+  const [overlayAlign, setOverlayAlign] = useState<"right" | "left">("left");
   const [forceShow, setForceShow] = useState(false);
 
   function updateOverlayAlign() {
