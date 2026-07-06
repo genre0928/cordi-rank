@@ -6,6 +6,10 @@
 }
 
 html {
+  /* 뷰포트 메타의 user-scalable=no는 iOS Safari(10+)가 접근성 이유로 무시하므로,
+     핀치 줌(확대/축소) 제스처 자체를 여기서 막는다. 스크롤(pan)은 그대로 허용된다. */
+  touch-action: pan-x pan-y;
+
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;
   }
