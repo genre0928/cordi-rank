@@ -43,10 +43,15 @@ function isRealCashEquipment(item: MapleStoryIoItem): boolean {
 
 /**
  * 같은 이름으로 여러 아이템 ID가 검색되는 경우(예: "투명 방패"가 설명 없는 것/있는 것
- * 두 개 ID로 존재)가 있다. 설명(desc)이 있는 쪽이 실제로 쓰이는 항목이므로, 그게 하나라도
- * 있으면 desc 없는 나머지는 버린다. 성별별로 묶어서 처리하므로, "메소레인저 블랙 헬멧"처럼
- * 이름은 같아도 성별이 다른(둘 다 desc가 없어도) 진짜 별개 아이템은 서로를 지우지 않는다.
- * 성별까지 같고 desc만 다른 "웨딩 드레스"류는 desc 있는 쪽만 남는다.
+ * 두 개 ID로 존재)가 있다. 성별별로 묶어서 처리하므로, "메소레인저 블랙 헬멧"처럼 이름은
+ * 같아도 성별이 다른 진짜 별개 아이템은 서로를 지우지 않는다.
+ *
+ * 실제 코디 검색(searchCoordiByItems)은 우리 DB의 cash_items.name을 ILIKE로 매칭할 뿐,
+ * maplestory.io의 아이템 ID는 전혀 쓰지 않는다. 즉 이름+성별이 같으면 어떤 ID를 보여주든
+ * 검색 결과는 동일하므로, 자동완성 목록에는 그룹당 정확히 하나만 남겨야 한다. 예전엔
+ * "desc 있는 것이 하나라도 있으면 desc 있는 것들을 전부" 남겼는데, "화이트 타임"처럼 desc
+ * 없는 항목만 있는 경우는 걸러졌지만 "마스터 타임"/"악몽 진주"처럼 desc 있는 항목이 2개
+ * 이상인 경우는 그대로 중복 노출됐다. desc 있는 것 중 하나(없으면 그냥 첫 번째)만 남긴다.
  */
 function dedupeByName(items: MapleStoryIoItem[]): MapleStoryIoItem[] {
   const groups = new Map<string, MapleStoryIoItem[]>();
@@ -60,7 +65,7 @@ function dedupeByName(items: MapleStoryIoItem[]): MapleStoryIoItem[] {
   const result: MapleStoryIoItem[] = [];
   for (const group of groups.values()) {
     const withDesc = group.filter((item) => (item.desc ?? "").trim().length > 0);
-    result.push(...(withDesc.length > 0 ? withDesc : group.slice(0, 1)));
+    result.push(...(withDesc.length > 0 ? withDesc.slice(0, 1) : group.slice(0, 1)));
   }
   return result;
 }
