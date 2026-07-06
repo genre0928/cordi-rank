@@ -367,16 +367,17 @@ export async function getCoordiWithSharedItems(entry: CoordiEntry, limit = 4): P
 
 export interface LikeResult {
   likeCount: number;
-  liked: boolean;
 }
 
-// 로그인/세션이 따로 없어, "이 서버 프로세스에서 이미 좋아요를 눌렀는지"만 메모리로 기억한다.
-// 실제 좋아요 수(like_count)는 Supabase에 저장되어 서버 재시작과 무관하게 유지된다.
-const likedByUser = new Set<number>();
-
-export async function toggleLikeCoordi(id: number): Promise<LikeResult> {
-  const alreadyLiked = likedByUser.has(id);
-
+/**
+ * 로그인/세션이 없어 "이 브라우저가 이미 좋아요했는지"는 서버가 판단할 수 없다(예전엔
+ * 서버 메모리 Set으로 흉내냈는데, Vercel 서버리스에선 요청마다 다른 인스턴스가 처리할
+ * 수 있어 거의 항상 틀렸다 - 새로고침하면 하트가 꺼져 보이고, 취소 클릭도 서버가 "새
+ * 좋아요"로 착각해 카운트가 계속 올라가기만 하는 버그가 있었다). 그래서 방향(liked)은
+ * 클라이언트(브라우저 localStorage 기준으로 이미 정확히 알고 있음)가 명시적으로
+ * 알려주고, 서버는 그 방향대로 like_count만 반영한다.
+ */
+export async function setCoordiLiked(id: number, liked: boolean): Promise<LikeResult> {
   const { data: current, error: readError } = await supabase
     .from("characters")
     .select("like_count")
@@ -386,19 +387,9 @@ export async function toggleLikeCoordi(id: number): Promise<LikeResult> {
     throw new Error(`코디를 찾을 수 없습니다: ${readError?.message ?? id}`);
   }
 
-  const next = Math.max(0, current.like_count + (alreadyLiked ? -1 : 1));
+  const next = Math.max(0, current.like_count + (liked ? 1 : -1));
   const { error: updateError } = await supabase.from("characters").update({ like_count: next }).eq("id", id);
   if (updateError) throw new Error(`좋아요 반영 실패: ${updateError.message}`);
 
-  if (alreadyLiked) {
-    likedByUser.delete(id);
-  } else {
-    likedByUser.add(id);
-  }
-
-  return { likeCount: next, liked: !alreadyLiked };
-}
-
-export function isLikedByUser(id: number): boolean {
-  return likedByUser.has(id);
+  return { likeCount: next };
 }

@@ -1,4 +1,4 @@
-import { getLikedRanking, isLikedByUser } from "~/services/coordi-service.server";
+import { getLikedRanking } from "~/services/coordi-service.server";
 import type { RankingPeriod } from "~/types/coordi";
 import type { Route } from "./+types/api.ranking";
 
@@ -11,7 +11,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const period = (url.searchParams.get("period") as RankingPeriod) || "today";
 
   const ranking = await getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET);
-  const likedMap = Object.fromEntries(ranking.map((entry) => [entry.id, isLikedByUser(entry.id)]));
 
-  return { period, ranking, likedMap };
+  return { period, ranking };
 }

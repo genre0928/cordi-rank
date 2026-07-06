@@ -68,7 +68,7 @@ export function CoordiDetailModal() {
         {!data ? (
           <div className="py-24 text-center text-gray-400">불러오는 중...</div>
         ) : (
-          <CoordiDetailContent entry={data.entry} sameItemCoordi={data.sameItemCoordi} liked={data.liked} />
+          <CoordiDetailContent entry={data.entry} sameItemCoordi={data.sameItemCoordi} />
         )}
       </div>
     </div>

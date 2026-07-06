@@ -29,19 +29,17 @@ import type { CoordiEntry } from "~/types/coordi";
 export function CharacterImageCard({
   entry,
   rank,
-  initiallyLiked,
   linkToDetail = false,
   showName = false,
 }: {
   entry: CoordiEntry;
   rank?: number;
-  initiallyLiked: boolean;
   /** true면 클릭 시 페이지 이동 대신 상세 정보 모달(CoordiDetailModal)을 연다. */
   linkToDetail?: boolean;
   /** 랭킹 사이드바처럼 이미지 아래에 캐릭터 닉네임을 보여줄 때 사용 */
   showName?: boolean;
 }) {
-  const { liked, count, toggle } = useLike(entry.id, initiallyLiked, entry.likeCount);
+  const { liked, count, toggle } = useLike(entry.id, entry.likeCount);
   const { rows, transparentItems } = buildDisplayRows(entry);
   const hasAnyItem = rows.length > 0 || transparentItems.length > 0;
   const { open: openDetailModal } = useCoordiModal();

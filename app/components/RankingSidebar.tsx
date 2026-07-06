@@ -14,30 +14,25 @@ const PERIOD_OPTIONS: { value: RankingPeriod; label: string }[] = [
 interface RankingResponse {
   period: RankingPeriod;
   ranking: CoordiEntry[];
-  likedMap: Record<number, boolean>;
 }
 
 export function RankingSidebar({
   period: initialPeriod,
   items: initialItems,
-  likedMap: initialLikedMap,
 }: {
   period: RankingPeriod;
   items: CoordiEntry[];
-  likedMap: Record<number, boolean>;
 }) {
   const fetcher = useFetcher<RankingResponse>();
 
   const [period, setPeriod] = useState(initialPeriod);
   const [items, setItems] = useState(initialItems);
-  const [likedMap, setLikedMap] = useState(initialLikedMap);
 
   // 다른 곳(예: 좋아요 버튼)에서 이 라우트가 revalidate되어도 랭킹 섹션은 그대로 두고,
   // 기간 탭을 눌렀을 때만 /api/ranking으로 이 섹션만 새로 받아온다.
   useEffect(() => {
     if (fetcher.data && fetcher.data.period === period) {
       setItems(fetcher.data.ranking);
-      setLikedMap(fetcher.data.likedMap);
     }
   }, [fetcher.data, period]);
 
@@ -87,13 +82,7 @@ export function RankingSidebar({
         <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-2">
           {items.map((entry, idx) => (
             <li key={entry.id}>
-              <CharacterImageCard
-                entry={entry}
-                rank={idx + 4}
-                initiallyLiked={likedMap[entry.id] ?? false}
-                linkToDetail
-                showName
-              />
+              <CharacterImageCard entry={entry} rank={idx + 4} linkToDetail showName />
             </li>
           ))}
         </ul>

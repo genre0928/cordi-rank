@@ -10,7 +10,6 @@ import {
   getCoordiStats,
   getLikedRanking,
   getRandomCoordi,
-  isLikedByUser,
   searchCoordiByItems,
 } from "~/services/coordi-service.server";
 import type { GenderFilter, ItemSearchEntry, RankingPeriod } from "~/types/coordi";
@@ -58,11 +57,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     getCoordiStats(),
   ]);
 
-  const likedMap = Object.fromEntries(
-    [...displayResults, ...ranking, ...topRanking].map((entry) => [entry.id, isLikedByUser(entry.id)]),
-  );
-
-  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap, stats };
+  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, stats };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -90,7 +85,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, likedMap, stats } = loaderData;
+  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, stats } = loaderData;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
@@ -103,7 +98,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
           </p>
         </div>
 
-        <TopRankingBanner items={topRanking} likedMap={likedMap} />
+        <TopRankingBanner items={topRanking} />
 
         <ItemSearchForm initialItems={items} initialGender={gender} />
 
@@ -127,11 +122,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
               {displayResults.map((entry) => (
                 <li key={entry.id}>
-                  <CharacterImageCard
-                    entry={entry}
-                    initiallyLiked={likedMap[entry.id] ?? false}
-                    linkToDetail
-                  />
+                  <CharacterImageCard entry={entry} linkToDetail />
                 </li>
               ))}
             </ul>
@@ -139,7 +130,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
       </section>
 
-      <RankingSidebar period={period} items={ranking} likedMap={likedMap} />
+      <RankingSidebar period={period} items={ranking} />
     </main>
   );
 }

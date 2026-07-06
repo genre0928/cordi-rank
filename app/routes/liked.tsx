@@ -76,7 +76,7 @@ export default function LikedCoordi() {
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
             {entries.map((entry) => (
               <li key={entry.id}>
-                <CharacterImageCard entry={entry} initiallyLiked linkToDetail showName />
+                <CharacterImageCard entry={entry} linkToDetail showName />
               </li>
             ))}
           </ul>

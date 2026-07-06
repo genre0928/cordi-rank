@@ -11,13 +11,11 @@ import type { CoordiEntry } from "~/types/coordi";
 export function CoordiDetailContent({
   entry,
   sameItemCoordi,
-  liked,
 }: {
   entry: CoordiEntry;
   sameItemCoordi: CoordiEntry[];
-  liked: boolean;
 }) {
-  const { liked: isLiked, count, toggle } = useLike(entry.id, liked, entry.likeCount);
+  const { liked: isLiked, count, toggle } = useLike(entry.id, entry.likeCount);
 
   return (
     <div>
@@ -40,7 +38,7 @@ export function CoordiDetailContent({
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {sameItemCoordi.map((item) => (
               <li key={item.id}>
-                <CharacterImageCard entry={item} initiallyLiked={false} linkToDetail />
+                <CharacterImageCard entry={item} linkToDetail />
               </li>
             ))}
           </ul>

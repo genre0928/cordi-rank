@@ -6,13 +6,7 @@ import type { CoordiEntry } from "~/types/coordi";
  * 검색창 위에 노출되는 이번 주 좋아요 상위 1~3위 배너.
  * 기존 사이드바 랭킹 섹션은 이 배너와 중복되지 않도록 4~10위만 보여준다.
  */
-export function TopRankingBanner({
-  items,
-  likedMap,
-}: {
-  items: CoordiEntry[];
-  likedMap: Record<number, boolean>;
-}) {
+export function TopRankingBanner({ items }: { items: CoordiEntry[] }) {
   if (items.length === 0) return null;
 
   return (
@@ -24,13 +18,7 @@ export function TopRankingBanner({
       <ul className="mt-3 grid grid-cols-3 gap-3">
         {items.map((entry, idx) => (
           <li key={entry.id}>
-            <CharacterImageCard
-              entry={entry}
-              rank={idx + 1}
-              initiallyLiked={likedMap[entry.id] ?? false}
-              linkToDetail
-              showName
-            />
+            <CharacterImageCard entry={entry} rank={idx + 1} linkToDetail showName />
           </li>
         ))}
       </ul>
