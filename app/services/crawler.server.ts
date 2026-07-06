@@ -216,6 +216,8 @@ export interface CrawlResult {
   fail: number;
   skipped: number;
   unchanged: number;
+  startPage: number;
+  nextPage: number;
 }
 
 /** 이 서버 프로세스 안에서 크롤이 겹쳐 실행되지 않도록 막는 아주 단순한 잠금. */
@@ -257,25 +259,56 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
       return res.json() as Promise<T>;
     }
 
-    async function fetchRankingSample(date: string, count: number): Promise<NexonRankingEntry[]> {
+    /**
+     * startPage부터 랭킹을 읽어 count명을 채운다. 매번 1페이지부터 다시 읽으면 같은
+     * 상위권만 반복해서 재방문하게 되므로(그 사람들은 짧은 주기 안에 옷을 잘 안 바꿔서
+     * coordi_hash가 그대로라 "변경 없음"만 반복됨), 크롤이 끝날 때마다 다음 시작 페이지를
+     * crawl_cursor에 저장해두고 다음 번엔 이어서 더 아래 랭킹을 읽는다. 랭킹 끝에
+     *도달하면(빈 페이지) 처음(1페이지)으로 되돌아간다.
+     */
+    async function fetchRankingSample(
+      date: string,
+      count: number,
+      startPage: number,
+    ): Promise<{ entries: NexonRankingEntry[]; nextPage: number }> {
       const characters: NexonRankingEntry[] = [];
-      let page = 1;
-      while (characters.length < count && page <= 10) {
+      let page = startPage;
+      const maxPage = startPage + 20; // 한 번에 너무 멀리까지 훑지 않게 하는 안전장치
+      let reachedEnd = false;
+      while (characters.length < count && page < maxPage) {
         const res = await nexonFetch<{ ranking: NexonRankingEntry[] }>(
           `/ranking/overall?date=${date}&page=${page}`,
         );
-        if (res.ranking.length === 0) break;
+        if (res.ranking.length === 0) {
+          reachedEnd = true;
+          break;
+        }
         characters.push(...res.ranking);
         page++;
       }
-      return characters.slice(0, count);
+      return { entries: characters.slice(0, count), nextPage: reachedEnd ? 1 : page };
     }
 
-    const date = ymd(new Date(Date.now() - 24 * 60 * 60 * 1000));
-    console.log(`[크롤러] ${date} 기준 랭킹에서 ${sampleSize}명 수집 시작`);
+    const CURSOR_ID = 1;
+    const { data: cursorRow, error: cursorReadError } = await supabase
+      .from("crawl_cursor")
+      .select("next_page")
+      .eq("id", CURSOR_ID)
+      .single();
+    if (cursorReadError) throw new Error(`크롤 커서 조회 실패: ${cursorReadError.message}`);
+    const startPage = cursorRow?.next_page ?? 1;
 
-    const targets = await fetchRankingSample(date, sampleSize);
-    console.log(`[크롤러] 랭킹에서 ${targets.length}명 확보, 캐릭터별 상세 조회 시작`);
+    const date = ymd(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    console.log(`[크롤러] ${date} 기준 랭킹 ${startPage}페이지부터 ${sampleSize}명 수집 시작`);
+
+    const { entries: targets, nextPage } = await fetchRankingSample(date, sampleSize, startPage);
+    console.log(`[크롤러] 랭킹에서 ${targets.length}명 확보(다음 시작 페이지 ${nextPage}), 캐릭터별 상세 조회 시작`);
+
+    const { error: cursorUpdateError } = await supabase
+      .from("crawl_cursor")
+      .update({ next_page: nextPage })
+      .eq("id", CURSOR_ID);
+    if (cursorUpdateError) throw new Error(`크롤 커서 갱신 실패: ${cursorUpdateError.message}`);
 
     let success = 0;
     let fail = 0;
@@ -395,9 +428,10 @@ export async function runCrawl(sampleSize = 100): Promise<CrawlResult> {
     }
 
     console.log(
-      `\n완료: 새 스냅샷 ${success} / 변경 없음 ${unchanged} / 실패 ${fail} / 미분류로 건너뜀 ${skipped}`,
+      `\n완료: 새 스냅샷 ${success} / 변경 없음 ${unchanged} / 실패 ${fail} / 미분류로 건너뜀 ${skipped} ` +
+        `(랭킹 ${startPage}→${nextPage}페이지)`,
     );
-    return { date, total: targets.length, success, fail, skipped, unchanged };
+    return { date, total: targets.length, success, fail, skipped, unchanged, startPage, nextPage };
   } finally {
     isCrawlRunning = false;
   }

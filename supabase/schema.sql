@@ -80,3 +80,17 @@ create policy "public read characters" on characters
 drop policy if exists "public read cash_items" on cash_items;
 create policy "public read cash_items" on cash_items
   for select using (true);
+
+-- 크롤러가 매번 랭킹 1페이지부터 다시 상위권만 긁지 않도록, 다음 크롤에서 시작할
+-- 랭킹 페이지를 기억해두는 단일 행 커서. 랭킹 끝에 도달하면 1로 되돌아간다.
+create table if not exists crawl_cursor (
+  id smallint primary key default 1,
+  next_page integer not null default 1
+);
+
+insert into crawl_cursor (id, next_page)
+values (1, 1)
+on conflict (id) do nothing;
+
+-- 크롤러(service role)만 읽고 쓰면 되므로 공개 읽기 정책 없이 RLS만 켜둔다.
+alter table crawl_cursor enable row level security;
