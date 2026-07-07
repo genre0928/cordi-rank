@@ -52,7 +52,7 @@ interface RecentItem {
 }
 
 const RECENT_ITEMS_KEY = "recentItemSearches";
-const MAX_RECENT_ITEMS = 8;
+const MAX_RECENT_ITEMS = 3;
 
 function loadRecentItems(): RecentItem[] {
   try {
@@ -387,6 +387,9 @@ export function ItemSearchForm({
                     <span className="text-gray-400 dark:text-gray-500"> ({suggestion.genderLabel})</span>
                   )}
                 </span>
+                {suggestion.part && (
+                  <span className="shrink-0 text-xs text-gray-400">{suggestion.part}</span>
+                )}
                 <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
                   {wearerCounts[suggestion.name] != null
                     ? `${wearerCounts[suggestion.name].toLocaleString("ko-KR")}명 착용`

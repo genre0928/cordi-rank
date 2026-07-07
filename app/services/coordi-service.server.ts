@@ -417,21 +417,17 @@ interface ItemSearchCountRow {
   search_count: number;
 }
 
-/** 홈 화면 통계 섹션 1: 가장 많이 검색된 아이템 TOP N. 아이콘은 cash_items에 저장된 값을 재사용한다. */
-export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> {
-  const { data: countRows, error } = await supabase
-    .from("item_search_counts")
-    .select("item_name, search_count")
-    .order("search_count", { ascending: false })
-    .limit(limit)
-    .returns<ItemSearchCountRow[]>();
-  if (error) throw new Error(`아이템 검색량 조회 실패: ${error.message}`);
-  if (!countRows || countRows.length === 0) return [];
+/**
+ * 아이템 이름 목록에 대해 "염색 안 된 원본 아이콘"을 찾는다.
+ * 1) cash_items에서 prism_applied = false인 행의 아이콘 우선.
+ * 2) 크롤링된 인스턴스가 전부 프리즘 적용이라 염색 안 된 행이 아예 없으면, maplestory.io
+ *    카탈로그(항상 기본 아이콘)에서 이름이 정확히 일치하는 아이콘을 찾는다.
+ * 3) 카탈로그에도 없으면(비매너 아이템 등) 프리즘 적용된 아이콘이라도 최후의 수단으로 쓴다
+ *    — 아이콘이 아예 없는 것보다는 낫다.
+ */
+async function resolveUndyedIconUrls(names: string[]): Promise<Map<string, string | null>> {
+  if (names.length === 0) return new Map();
 
-  const names = countRows.map((row) => row.item_name);
-
-  // 프리즘 염색된 아이콘이 뜨지 않도록, 우선 염색 안 된(prism_applied = false) 행의
-  // 아이콘을 찾는다.
   const { data: plainIconRows, error: plainIconError } = await supabase
     .from("cash_items")
     .select("name, icon_url")
@@ -444,8 +440,6 @@ export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> 
     if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
   }
 
-  // 크롤링된 인스턴스가 전부 프리즘 적용이라 염색 안 된 행이 아예 없는 아이템도 있다.
-  // 그런 경우엔 maplestory.io 카탈로그(항상 기본 아이콘)에서 정확히 일치하는 이름을 찾는다.
   const missingAfterPlain = names.filter((name) => !iconByName.has(name));
   if (missingAfterPlain.length > 0) {
     const catalogResults = await Promise.all(missingAfterPlain.map((name) => searchItemSuggestions(name)));
@@ -456,8 +450,6 @@ export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> 
     });
   }
 
-  // 카탈로그에도 없으면(비매너 아이템 등) 프리즘 적용된 아이콘이라도 최후의 수단으로
-  // 보여준다 — 아이콘이 아예 없는 것보다는 낫다.
   const stillMissing = names.filter((name) => !iconByName.has(name));
   if (stillMissing.length > 0) {
     const { data: fallbackRows, error: fallbackError } = await supabase
@@ -469,6 +461,22 @@ export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> 
       if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
     }
   }
+
+  return iconByName;
+}
+
+/** 홈 화면 통계 섹션 1: 가장 많이 검색된 아이템 TOP N. 아이콘은 cash_items에 저장된 값을 재사용한다. */
+export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> {
+  const { data: countRows, error } = await supabase
+    .from("item_search_counts")
+    .select("item_name, search_count")
+    .order("search_count", { ascending: false })
+    .limit(limit)
+    .returns<ItemSearchCountRow[]>();
+  if (error) throw new Error(`아이템 검색량 조회 실패: ${error.message}`);
+  if (!countRows || countRows.length === 0) return [];
+
+  const iconByName = await resolveUndyedIconUrls(countRows.map((row) => row.item_name));
 
   return countRows.map((row) => ({
     name: row.item_name,
@@ -540,14 +548,29 @@ interface AppearanceDyeRow {
   rate: number | null;
 }
 
+/** hair_base_color에 실제로 나오는 색상 이름 전체(자동완성/염색 순위에서 접두사 판별에 재사용). */
+const HAIR_COLOR_PREFIXES = new Set([
+  "파란색",
+  "빨간색",
+  "초록색",
+  "보라색",
+  "주황색",
+  "갈색",
+  "검은색",
+  "노란색",
+]);
+
 /**
  * "파란색 쿼츠 헤어"처럼 헤어 이름 맨 앞에는 항상 hair_base_color와 같은 색상 형용사가
- * 붙는다(같은 스타일이라도 색상마다 아이템 이름 자체가 다름). 염색 순위는 "이 스타일의
- * 색상 분포"를 보고 싶은 것이므로, 맨 앞 색상 단어를 떼어 스타일명만으로 묶어서 조회한다.
+ * 붙는다(같은 스타일이라도 색상마다 아이템 이름 자체가 다름). 염색 순위/자동완성은 "이
+ * 스타일"을 보고 싶은 것이므로, 맨 앞이 실제 색상 단어일 때만 떼어 스타일명만 남긴다
+ * (이미 접두사가 없는 이름을 넣어도 아무 단어나 잘려나가지 않도록 방어).
  */
 function stripHairColorPrefix(hairName: string): string {
   const spaceIndex = hairName.indexOf(" ");
-  return spaceIndex === -1 ? hairName : hairName.slice(spaceIndex + 1);
+  if (spaceIndex === -1) return hairName;
+  const firstWord = hairName.slice(0, spaceIndex);
+  return HAIR_COLOR_PREFIXES.has(firstWord) ? hairName.slice(spaceIndex + 1) : hairName;
 }
 
 /**
@@ -687,16 +710,33 @@ export async function getSearchColorInfo(entry: {
   keyword: string;
 }): Promise<SearchColorInfo> {
   if (entry.kind === "item") {
-    return { kind: "item", keyword: entry.keyword, prism: await getPrismRankingForItem(entry.keyword), dye: null };
+    const [prism, iconByName] = await Promise.all([
+      getPrismRankingForItem(entry.keyword),
+      resolveUndyedIconUrls([entry.keyword]),
+    ]);
+    return {
+      kind: "item",
+      keyword: entry.keyword,
+      prism,
+      dye: null,
+      iconUrl: iconByName.get(entry.keyword) ?? null,
+    };
   }
   if (entry.kind === "skin") {
-    return { kind: "skin", keyword: entry.keyword, prism: await getPrismRankingForSkin(entry.keyword), dye: null };
+    return {
+      kind: "skin",
+      keyword: entry.keyword,
+      prism: await getPrismRankingForSkin(entry.keyword),
+      dye: null,
+      iconUrl: null,
+    };
   }
   return {
     kind: entry.kind,
     keyword: entry.keyword,
     dye: await getDyeRankingForAppearance(entry.kind, entry.keyword),
     prism: null,
+    iconUrl: null,
   };
 }
 
@@ -722,7 +762,12 @@ export async function searchAppearanceSuggestions(keyword: string): Promise<Appe
   if (faceRows.error) throw new Error(`성형 후보 조회 실패: ${faceRows.error.message}`);
   if (skinRows.error) throw new Error(`피부 후보 조회 실패: ${skinRows.error.message}`);
 
-  const hairNames = dedupeNames((hairRows.data ?? []).map((row) => row.hair_name), 3);
+  // 헤어는 "파란색 쿼츠 헤어"/"초록색 쿼츠 헤어"처럼 색상 접두사만 다른 같은 스타일이
+  // 흔해서, 접두사를 뗀 스타일명으로 묶어야 자동완성에 중복(사실상 같은 헤어)이 안 뜬다.
+  const hairNames = dedupeNames(
+    (hairRows.data ?? []).map((row) => (row.hair_name ? stripHairColorPrefix(row.hair_name) : null)),
+    3,
+  );
   const faceNames = dedupeNames((faceRows.data ?? []).map((row) => row.face_name), 3);
   const skinNames = dedupeNames((skinRows.data ?? []).map((row) => row.skin_name), 3);
 

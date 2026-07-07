@@ -17,21 +17,23 @@ const MAPLESTORY_IO_BASE = "https://maplestory.io/api/KMS/389";
 
 const WEAPON_CATEGORIES = new Set(["One-Handed Weapon", "Two-Handed Weapon", "Secondary Weapon"]);
 
-/** cash_item_equipment_part 실측값에 대응하는 maplestory.io subCategory만 허용한다. */
-const ALLOWED_SUB_CATEGORIES = new Set([
-  "Hat", // 모자
-  "Face Accessory", // 얼굴장식
-  "Eye Decoration", // 눈장식
-  "Earrings", // 귀고리
-  "Earring", // 귀고리 (표기 변형)
-  "Top", // 상의
-  "Bottom", // 하의
-  "Overall", // 한벌옷
-  "Shoes", // 신발
-  "Glove", // 장갑
-  "Cape", // 망토
-  "Shield", // 방패
-]);
+/** cash_item_equipment_part 실측값에 대응하는 maplestory.io subCategory -> 우리 쪽 한글 부위명. */
+const SUB_CATEGORY_TO_PART: Record<string, string> = {
+  Hat: "모자",
+  "Face Accessory": "얼굴장식",
+  "Eye Decoration": "눈장식",
+  Earrings: "귀고리",
+  Earring: "귀고리", // 표기 변형
+  Top: "상의",
+  Bottom: "하의",
+  Overall: "한벌옷",
+  Shoes: "신발",
+  Glove: "장갑",
+  Cape: "망토",
+  Shield: "방패",
+};
+
+const ALLOWED_SUB_CATEGORIES = new Set(Object.keys(SUB_CATEGORY_TO_PART));
 
 function isRealCashEquipment(item: MapleStoryIoItem): boolean {
   if (!item.isCash || item.typeInfo?.overallCategory !== "Equip") return false;
@@ -41,22 +43,40 @@ function isRealCashEquipment(item: MapleStoryIoItem): boolean {
   return WEAPON_CATEGORIES.has(category) || ALLOWED_SUB_CATEGORIES.has(subCategory);
 }
 
+/** 헤어/성형이 "헤어"/"성형"으로 뜨는 것처럼, 캐시 아이템도 착용 부위를 라벨로 보여준다. */
+function toPartLabel(item: MapleStoryIoItem): string | null {
+  const subCategory = item.typeInfo?.subCategory ?? "";
+  if (SUB_CATEGORY_TO_PART[subCategory]) return SUB_CATEGORY_TO_PART[subCategory];
+  const category = item.typeInfo?.category ?? "";
+  return WEAPON_CATEGORIES.has(category) ? "무기" : null;
+}
+
+/** requiredGender: 0=남, 1=여, 3=공용(표시 안 함). 그 외 값도 표시하지 않는다. */
+function toGenderLabel(requiredGender: number | undefined): "남" | "여" | null {
+  if (requiredGender === 0) return "남";
+  if (requiredGender === 1) return "여";
+  return null;
+}
+
 /**
  * 같은 이름으로 여러 아이템 ID가 검색되는 경우(예: "투명 방패"가 설명 없는 것/있는 것
- * 두 개 ID로 존재)가 있다. 성별별로 묶어서 처리하므로, "메소레인저 블랙 헬멧"처럼 이름은
- * 같아도 성별이 다른 진짜 별개 아이템은 서로를 지우지 않는다.
+ * 두 개 ID로 존재)가 있다. 화면에 실제로 보이는 성별 라벨(genderLabel) 기준으로 묶어서
+ * 처리하므로, "메소레인저 블랙 헬멧"처럼 이름은 같아도 남/여로 표시가 갈리는 진짜 별개
+ * 아이템은 서로를 지우지 않는다. requiredGender 원본값(0/1/3/4/6...) 기준으로 묶으면,
+ * "화이트 타임"처럼 화면엔 똑같이 라벨이 안 보이는데(둘 다 남/여가 아님) 원본 코드값만
+ * 다른 항목(4, 6 등)이 서로 다른 그룹으로 남아 사용자 눈엔 완전히 똑같은 중복으로 보였다.
  *
  * 실제 코디 검색(searchCoordiByItems)은 우리 DB의 cash_items.name을 ILIKE로 매칭할 뿐,
- * maplestory.io의 아이템 ID는 전혀 쓰지 않는다. 즉 이름+성별이 같으면 어떤 ID를 보여주든
- * 검색 결과는 동일하므로, 자동완성 목록에는 그룹당 정확히 하나만 남겨야 한다. 예전엔
- * "desc 있는 것이 하나라도 있으면 desc 있는 것들을 전부" 남겼는데, "화이트 타임"처럼 desc
- * 없는 항목만 있는 경우는 걸러졌지만 "마스터 타임"/"악몽 진주"처럼 desc 있는 항목이 2개
- * 이상인 경우는 그대로 중복 노출됐다. desc 있는 것 중 하나(없으면 그냥 첫 번째)만 남긴다.
+ * maplestory.io의 아이템 ID는 전혀 쓰지 않는다. 즉 이름+성별 라벨이 같으면 어떤 ID를
+ * 보여주든 검색 결과는 동일하므로, 자동완성 목록에는 그룹당 정확히 하나만 남겨야 한다.
+ * "desc 있는 것이 하나라도 있으면 desc 있는 것들을 전부" 남기면 "마스터 타임"/"악몽
+ * 진주"처럼 desc 있는 항목이 2개 이상인 경우 그대로 중복 노출되므로, desc 있는 것 중
+ * 하나(없으면 그냥 첫 번째)만 남긴다.
  */
 function dedupeByName(items: MapleStoryIoItem[]): MapleStoryIoItem[] {
   const groups = new Map<string, MapleStoryIoItem[]>();
   for (const item of items) {
-    const key = `${item.name}|${item.requiredGender ?? ""}`;
+    const key = `${item.name}|${toGenderLabel(item.requiredGender) ?? ""}`;
     const group = groups.get(key) ?? [];
     group.push(item);
     groups.set(key, group);
@@ -68,13 +88,6 @@ function dedupeByName(items: MapleStoryIoItem[]): MapleStoryIoItem[] {
     result.push(...(withDesc.length > 0 ? withDesc.slice(0, 1) : group.slice(0, 1)));
   }
   return result;
-}
-
-/** requiredGender: 0=남, 1=여, 3=공용(표시 안 함). 그 외 값도 표시하지 않는다. */
-function toGenderLabel(requiredGender: number | undefined): "남" | "여" | null {
-  if (requiredGender === 0) return "남";
-  if (requiredGender === 1) return "여";
-  return null;
 }
 
 interface MapleStoryIoItem {
@@ -96,6 +109,8 @@ export interface ItemSuggestion {
   iconUrl: string;
   /** "남"/"여"만 표시하고, 공용(3)이거나 알 수 없는 값이면 null (표시 안 함). */
   genderLabel: "남" | "여" | null;
+  /** 착용 부위(모자/상의/신발/무기 등). 헤어/성형/피부가 "헤어"/"성형"/"피부"로 뜨는 것과 같은 목적. */
+  part: string | null;
   /** 이 아이템을 실제로 착용 중인 캐릭터 수. /api/item-suggestions 라우트에서 DB 조회 후 채워진다. */
   wearerCount?: number;
 }
@@ -126,6 +141,7 @@ export async function searchItemSuggestions(
       name: item.name,
       iconUrl: `${MAPLESTORY_IO_BASE}/item/${item.id}/icon`,
       genderLabel: toGenderLabel(item.requiredGender),
+      part: toPartLabel(item),
     }));
 }
 

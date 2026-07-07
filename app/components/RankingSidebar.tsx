@@ -1,5 +1,5 @@
 import { Palette, Trophy } from "lucide-react";
-import { useComboModal } from "~/context/combo-modal";
+import { ComboDonutChart, type DonutSegment } from "~/components/ComboDonutChart";
 import type { DyeRanking, ItemSearchKind, ItemSearchStat, PrismRanking, SearchColorInfo } from "~/types/coordi";
 
 function kindLabel(kind: ItemSearchKind): string {
@@ -15,100 +15,93 @@ function signedPad(n: number, width: number): string {
   return `${sign}${Math.abs(n).toString().padStart(width, "0")}`;
 }
 
-/** 예: "(색 +110 채 +90 명 +80) 24%" */
-function formatPrismCombo(entry: PrismRanking["ranking"][number]): string {
+/** 예: "색 +110 채 +90 명 +80" (비율은 도넛 차트 숫자로 따로 보여주니 여기엔 안 붙인다). */
+function prismComboCaption(entry: PrismRanking["ranking"][number]): string {
   const hue = signedPad(entry.hue ?? 0, 3);
   const saturation = signedPad(entry.saturation ?? 0, 2);
   const value = signedPad(entry.value ?? 0, 2);
-  return `(색 ${hue} 채 ${saturation} 명 ${value}) ${entry.percentage}%`;
+  return `색 ${hue} 채 ${saturation} 명 ${value}`;
 }
 
-/** 예: "(초41:갈59) 24%". 혼합색이 없으면 기본색 하나만(100%로 취급). */
-function formatDyeCombo(entry: DyeRanking["ranking"][number]): string {
-  if (!entry.baseColor) return `정보 없음 ${entry.percentage}%`;
+/** 예: "초41:갈59". 혼합색이 없으면 기본색 하나만. */
+function dyeComboCaption(entry: DyeRanking["ranking"][number]): string {
+  if (!entry.baseColor) return "정보 없음";
   const baseAbbr = entry.baseColor.charAt(0);
-  if (!entry.mixColor || entry.mixRate == null) {
-    return `(${baseAbbr}100) ${entry.percentage}%`;
-  }
+  if (!entry.mixColor || entry.mixRate == null) return `${baseAbbr}100`;
   const mixAbbr = entry.mixColor.charAt(0);
   const baseShare = 100 - entry.mixRate;
-  return `(${baseAbbr}${baseShare}:${mixAbbr}${entry.mixRate}) ${entry.percentage}%`;
+  return `${baseAbbr}${baseShare}:${mixAbbr}${entry.mixRate}`;
 }
 
-/**
- * 색상 조합 한 줄. 클릭하면 그 조합과 정확히 일치하는 코디들을 모아 보여주는 모달이 뜬다
- * (ComboCoordiModal). entryIds는 조합당 최대 COMBO_PREVIEW_SAMPLE_SIZE개만 들고 있으므로
- * (서비스 레이어 주석 참고), 모달이 그 id들로 실제 상세 정보를 가져온다.
- */
-function ComboRow({ index, label, entryIds }: { index: number; label: string; entryIds: number[] }) {
-  const { open } = useComboModal();
+/** hue(0~359)를 그대로 HSL 색상값으로 써서, 실제 적용된 색상 계열과 비슷한 색으로 구간을 칠한다. */
+function prismSegmentColor(entry: PrismRanking["ranking"][number]): string {
+  return `hsl(${entry.hue ?? 0}, 65%, 55%)`;
+}
 
-  if (entryIds.length === 0) {
-    return (
-      <li className="text-xs text-gray-600 dark:text-gray-300">
-        {index + 1}. {label}
-      </li>
-    );
-  }
+/** 헤어/성형 색상 이름(한국어)을 도넛 구간 색상으로 대략 매핑한다. */
+const KOREAN_COLOR_HEX: Record<string, string> = {
+  파란색: "#3b82f6",
+  빨간색: "#ef4444",
+  초록색: "#22c55e",
+  보라색: "#a855f7",
+  주황색: "#f97316",
+  갈색: "#92400e",
+  검은색: "#374151",
+  노란색: "#eab308",
+  자수정: "#8b5cf6",
+  에메랄드: "#10b981",
+};
 
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() => open({ label, entryIds })}
-        aria-label={`${label} 코디 보기`}
-        className="w-full rounded px-0.5 text-left text-xs text-gray-600 transition hover:text-orange-500 dark:text-gray-300"
-      >
-        {index + 1}. {label}
-      </button>
-    </li>
-  );
+function dyeSegmentColor(entry: DyeRanking["ranking"][number]): string {
+  return (entry.baseColor && KOREAN_COLOR_HEX[entry.baseColor]) || "#9ca3af";
 }
 
 function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
+  const segments: DonutSegment[] | null = info.prism
+    ? info.prism.ranking.map((entry) => ({
+        modalLabel: `${prismComboCaption(entry)} (${entry.percentage}%)`,
+        caption: prismComboCaption(entry),
+        percentage: entry.percentage,
+        color: prismSegmentColor(entry),
+        entryIds: entry.entryIds,
+      }))
+    : info.dye
+      ? info.dye.ranking.map((entry) => ({
+          modalLabel: `${dyeComboCaption(entry)} (${entry.percentage}%)`,
+          caption: dyeComboCaption(entry),
+          percentage: entry.percentage,
+          color: dyeSegmentColor(entry),
+          entryIds: entry.entryIds,
+        }))
+      : null;
+
   return (
     <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-800">
       <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-200">
+        {info.iconUrl && (
+          <img src={info.iconUrl} alt="" className="h-5 w-5 shrink-0 object-contain" loading="lazy" />
+        )}
         <span className="min-w-0 flex-1 truncate">{info.keyword}</span>
         <span className="shrink-0 text-xs font-normal text-gray-400">{kindLabel(info.kind)}</span>
       </p>
 
-      {info.prism ? (
-        info.prism.ranking.length === 0 ? (
-          <p className="mt-2 text-xs text-gray-400">
-            {info.kind === "skin" ? "커스텀 색상 적용 사례가 없어요." : "프리즘 적용 사례가 없어요."}
-          </p>
-        ) : (
-          <>
-            <p className="mt-2 text-xs text-gray-400">
-              {info.kind === "skin" ? "커스텀 색상 적용" : "프리즘 적용"}{" "}
-              {info.prism.prismAppliedCount.toLocaleString("ko-KR")}/{info.prism.totalCount.toLocaleString("ko-KR")}건
+      {info.prism && info.prism.ranking.length === 0 ? (
+        <p className="mt-2 text-xs text-gray-400">
+          {info.kind === "skin" ? "커스텀 색상 적용 사례가 없어요." : "프리즘 적용 사례가 없어요."}
+        </p>
+      ) : info.dye && info.dye.ranking.length === 0 ? (
+        <p className="mt-2 text-xs text-gray-400">색상 정보가 없어요.</p>
+      ) : segments ? (
+        <>
+          {info.dye && (
+            <p className="mt-2 text-center text-xs text-gray-400">
+              총 {info.dye.totalCount.toLocaleString("ko-KR")}건
             </p>
-            <ol className="mt-1.5 space-y-1">
-              {info.prism.ranking.map((entry, idx) => (
-                <ComboRow
-                  key={idx}
-                  index={idx}
-                  label={formatPrismCombo(entry)}
-                  entryIds={entry.entryIds}
-                />
-              ))}
-            </ol>
-          </>
-        )
-      ) : info.dye ? (
-        info.dye.ranking.length === 0 ? (
-          <p className="mt-2 text-xs text-gray-400">색상 정보가 없어요.</p>
-        ) : (
-          <>
-            <p className="mt-2 text-xs text-gray-400">총 {info.dye.totalCount.toLocaleString("ko-KR")}건</p>
-            <ol className="mt-1.5 space-y-1">
-              {info.dye.ranking.map((entry, idx) => (
-                <ComboRow key={idx} index={idx} label={formatDyeCombo(entry)} entryIds={entry.entryIds} />
-              ))}
-            </ol>
-          </>
-        )
+          )}
+          <div className="mt-2">
+            <ComboDonutChart segments={segments} />
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -118,10 +111,11 @@ function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
  * 홈 화면 통계 섹션. 두 부분으로 구성된다.
  * 1) 가장 많이 검색된 아이템 TOP 5 (item_search_counts 집계).
  * 2) 왼쪽 검색창에 지금 걸린 검색어들의 색상 정보 — 아이템/피부는 색조·채도·명도 조합
- *    순위를, 헤어/성형은 기본색+혼합색 비율 조합 순위를 보여준다. 예전엔 이 섹션 자체가
- *    독립된 검색창이었지만, 왼쪽 검색과 별개로 또 검색해야 하는 게 번거로워 왼쪽 검색
- *    상태를 그대로 반영하도록 바꿨다(별도 fetcher 없이 loader가 내려주는 데이터를 그대로 씀).
- *    각 조합 줄은 클릭하면 그 조합과 일치하는 코디 모음 모달(ComboCoordiModal)이 뜬다.
+ *    순위를, 헤어/성형은 기본색+혼합색 비율 조합 순위를 도넛 차트로 보여준다. 예전엔 이
+ *    섹션 자체가 독립된 검색창이었지만, 왼쪽 검색과 별개로 또 검색해야 하는 게 번거로워
+ *    왼쪽 검색 상태를 그대로 반영하도록 바꿨다(별도 fetcher 없이 loader가 내려주는
+ *    데이터를 그대로 씀). 차트 구간을 hover하면 가운데 숫자가 그 구간 비율로 바뀌고,
+ *    클릭하면 그 조합과 일치하는 코디 모음 모달(ComboCoordiModal)이 뜬다.
  */
 export function RankingSidebar({
   topSearchedItems,

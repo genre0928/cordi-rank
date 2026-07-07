@@ -159,6 +159,8 @@ export interface DyeRanking {
 export interface SearchColorInfo {
   kind: ItemSearchKind;
   keyword: string;
+  /** kind === "item"일 때만 채워지는 원본(염색 안 된) 아이콘. 헤어/성형/피부는 고정 아이콘을 쓰므로 null. */
+  iconUrl: string | null;
   prism: PrismRanking | null;
   dye: DyeRanking | null;
 }
