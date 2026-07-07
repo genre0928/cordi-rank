@@ -36,9 +36,13 @@ export type RankingPeriod = "today" | "weekly" | "monthly";
 
 export type GenderFilter = "all" | CharacterGender;
 
-/** 검색창에 추가된 아이템 하나. 프리즘 적용 여부는 아이템별로 따로 설정한다. */
+/** 검색어가 캐시 아이템인지, 헤어/성형/피부(캐릭터 외형)인지. 후자는 characters 테이블에서 직접 찾는다. */
+export type ItemSearchKind = "item" | "hair" | "face" | "skin";
+
+/** 검색창에 추가된 아이템 하나. 프리즘 적용 여부는 캐시 아이템(kind === "item")에만 의미가 있다. */
 export interface ItemSearchEntry {
   keyword: string;
+  kind: ItemSearchKind;
   prismOnly: boolean;
 }
 
@@ -102,4 +106,54 @@ export interface CoordiEntry {
   likeCount: number;
   createdAt: string;
   tags: string[];
+}
+
+/** 홈 화면 통계 섹션 1: 가장 많이 검색된 아이템 한 줄. */
+export interface ItemSearchStat {
+  name: string;
+  iconUrl: string | null;
+  searchCount: number;
+}
+
+/** 통계 섹션 2의 검색 대상 종류: 캐시 아이템 / 헤어 / 성형(얼굴). */
+export type StatTargetKind = "item" | "hair" | "face";
+
+/** 통계 섹션 2 자동완성 후보. */
+export interface StatTarget {
+  kind: StatTargetKind;
+  name: string;
+  iconUrl?: string | null;
+}
+
+/** 캐시 아이템 하나의 프리즘 색상 조합별 집계 한 줄. */
+export interface PrismRankingEntry {
+  colorRange: string | null;
+  hue: number | null;
+  saturation: number | null;
+  value: number | null;
+  count: number;
+  percentage: number;
+}
+
+export interface PrismRanking {
+  /** 이 아이템을 착용 중인 전체 스냅샷 수(프리즘 미적용 포함). */
+  totalCount: number;
+  /** 그중 프리즘을 적용한 스냅샷 수. */
+  prismAppliedCount: number;
+  /** 프리즘 적용 스냅샷 중 색상 조합별 비율 상위 목록. */
+  ranking: PrismRankingEntry[];
+}
+
+/** 헤어/성형 하나의 색상 조합(기본색+혼합색+비율)별 집계 한 줄. */
+export interface DyeRankingEntry {
+  baseColor: string | null;
+  mixColor: string | null;
+  mixRate: number | null;
+  count: number;
+  percentage: number;
+}
+
+export interface DyeRanking {
+  totalCount: number;
+  ranking: DyeRankingEntry[];
 }

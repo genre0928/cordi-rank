@@ -3,11 +3,18 @@ import type {
   AppearanceInfo,
   CashItem,
   CoordiEntry,
+  DyeRanking,
+  DyeRankingEntry,
   GenderFilter,
+  ItemSearchKind,
   ItemSearchParams,
+  ItemSearchStat,
   JobGroup,
+  PrismRanking,
+  PrismRankingEntry,
   RankingPeriod,
   SkinInfo,
+  StatTarget,
 } from "~/types/coordi";
 
 /**
@@ -191,6 +198,21 @@ async function idsMatchingCondition(keyword: string, prismOnly: boolean): Promis
 }
 
 /**
+ * 헤어/성형/피부는 cash_items가 아니라 characters 테이블에 직접 이름이 있으므로,
+ * 그 컬럼(hair_name/face_name/skin_name)을 바로 검색해 스냅샷 id를 반환한다.
+ */
+async function idsMatchingAppearanceCondition(
+  kind: Exclude<ItemSearchKind, "item">,
+  keyword: string,
+): Promise<Set<number>> {
+  const column = `${kind}_name`;
+  const rows = await selectAllRows<{ id: number }>(`${kind} 검색`, (from, to) =>
+    supabase.from("characters").select("id").ilike(column, `%${keyword}%`).range(from, to),
+  );
+  return new Set(rows.map((row) => row.id));
+}
+
+/**
  * 아이템 이름별로 실제 착용 중인 캐릭터 수를 센다 (자동완성에서 "0명"인 아이템을
  * 미리 보여줘서 검색해도 결과가 없는 걸 검색 전에 알 수 있게 한다).
  * 캐릭터 한 명이 여러 스냅샷(코디 변천사)을 가질 수 있으므로, cash_items의 행 수가
@@ -221,6 +243,18 @@ export async function countWearersByItemNames(names: string[]): Promise<Record<s
   return Object.fromEntries([...ocidsByName].map(([name, ocids]) => [name, ocids.size]));
 }
 
+/**
+ * "가장 많이 검색된 아이템" 집계용. 검색창은 자동완성에서 고른 정확한 아이템 이름만
+ * 태그로 추가하므로(목록에 없는 이름은 애초에 막힘), searchCoordiByItems가 실행될 때마다
+ * 그 이름 그대로 카운트를 올리면 된다. 집계 실패가 검색 자체를 막으면 안 되므로 에러는
+ * 조용히 무시한다.
+ */
+async function logItemSearch(names: string[]): Promise<void> {
+  await Promise.allSettled(
+    names.map((name) => supabase.rpc("increment_item_search_count", { p_item_name: name })),
+  );
+}
+
 /** 아이템 이름(부위 무관) 다중 조건 + 성별로 캐릭터 코디 이미지를 찾는다. 프리즘 적용 여부는 아이템별로 검사한다. */
 export async function searchCoordiByItems({
   items,
@@ -231,8 +265,14 @@ export async function searchCoordiByItems({
     .filter((entry) => entry.keyword.length > 0);
   if (activeItems.length === 0) return [];
 
+  void logItemSearch(activeItems.filter((item) => item.kind === "item").map((item) => item.keyword));
+
   const idSets = await Promise.all(
-    activeItems.map((item) => idsMatchingCondition(item.keyword, item.prismOnly)),
+    activeItems.map((item) =>
+      item.kind === "item"
+        ? idsMatchingCondition(item.keyword, item.prismOnly)
+        : idsMatchingAppearanceCondition(item.kind, item.keyword),
+    ),
   );
 
   let matched = idSets[0];
@@ -369,4 +409,235 @@ export async function setCoordiLiked(id: number, liked: boolean): Promise<LikeRe
   if (updateError) throw new Error(`좋아요 반영 실패: ${updateError.message}`);
 
   return { likeCount: next };
+}
+
+interface ItemSearchCountRow {
+  item_name: string;
+  search_count: number;
+}
+
+/** 홈 화면 통계 섹션 1: 가장 많이 검색된 아이템 TOP N. 아이콘은 cash_items에 저장된 값을 재사용한다. */
+export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> {
+  const { data: countRows, error } = await supabase
+    .from("item_search_counts")
+    .select("item_name, search_count")
+    .order("search_count", { ascending: false })
+    .limit(limit)
+    .returns<ItemSearchCountRow[]>();
+  if (error) throw new Error(`아이템 검색량 조회 실패: ${error.message}`);
+  if (!countRows || countRows.length === 0) return [];
+
+  const names = countRows.map((row) => row.item_name);
+  const { data: iconRows, error: iconError } = await supabase
+    .from("cash_items")
+    .select("name, icon_url")
+    .in("name", names);
+  if (iconError) throw new Error(`아이템 아이콘 조회 실패: ${iconError.message}`);
+
+  const iconByName = new Map<string, string | null>();
+  for (const row of iconRows ?? []) {
+    if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
+  }
+
+  return countRows.map((row) => ({
+    name: row.item_name,
+    iconUrl: iconByName.get(row.item_name) ?? null,
+    searchCount: row.search_count,
+  }));
+}
+
+interface CashItemPrismRow {
+  prism_applied: boolean;
+  color_range: string | null;
+  hue: number | null;
+  saturation: number | null;
+  value: number | null;
+}
+
+/**
+ * 특정 캐시 아이템의 프리즘 색상 조합 순위. 착용 중인 모든 스냅샷(검색 조건과 무관하게
+ * 그 아이템 이름 전체)을 기준으로 집계한다. color_range+hue+saturation+value가 모두
+ * 같은 조합을 하나로 묶어 개수/비율을 낸다.
+ */
+export async function getPrismRankingForItem(itemName: string): Promise<PrismRanking> {
+  const rows = await selectAllRows<CashItemPrismRow>("아이템 프리즘 조회", (from, to) =>
+    supabase
+      .from("cash_items")
+      .select("prism_applied, color_range, hue, saturation, value")
+      .eq("name", itemName)
+      .range(from, to),
+  );
+
+  const prismRows = rows.filter((row) => row.prism_applied);
+  const counts = new Map<string, { row: CashItemPrismRow; count: number }>();
+  for (const row of prismRows) {
+    const key = `${row.color_range}|${row.hue}|${row.saturation}|${row.value}`;
+    const existing = counts.get(key);
+    if (existing) existing.count += 1;
+    else counts.set(key, { row, count: 1 });
+  }
+
+  const ranking: PrismRankingEntry[] = [...counts.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(({ row, count }) => ({
+      colorRange: row.color_range,
+      hue: row.hue,
+      saturation: row.saturation,
+      value: row.value,
+      count,
+      percentage: prismRows.length > 0 ? Math.round((count / prismRows.length) * 1000) / 10 : 0,
+    }));
+
+  return { totalCount: rows.length, prismAppliedCount: prismRows.length, ranking };
+}
+
+interface AppearanceDyeRow {
+  base: string | null;
+  mix: string | null;
+  rate: number | null;
+}
+
+/**
+ * 헤어/성형 하나의 색상 조합(기본색+혼합색+비율) 순위. characters 테이블에서 해당
+ * 이름(hair_name 또는 face_name)과 일치하는 모든 스냅샷을 기준으로 집계한다.
+ */
+export async function getDyeRankingForAppearance(
+  part: "hair" | "face",
+  name: string,
+): Promise<DyeRanking> {
+  const nameColumn = part === "hair" ? "hair_name" : "face_name";
+  const baseColumn = part === "hair" ? "hair_base_color" : "face_base_color";
+  const mixColumn = part === "hair" ? "hair_mix_color" : "face_mix_color";
+  const rateColumn = part === "hair" ? "hair_mix_rate" : "face_mix_rate";
+
+  const rows = await selectAllRows<Record<string, string | number | null>>(
+    `${part} 색상 조회`,
+    (from, to) =>
+      supabase
+        .from("characters")
+        .select(`${baseColumn}, ${mixColumn}, ${rateColumn}`)
+        .eq(nameColumn, name)
+        .range(from, to),
+  );
+
+  const normalized: AppearanceDyeRow[] = rows.map((row) => ({
+    base: (row[baseColumn] as string | null) ?? null,
+    mix: (row[mixColumn] as string | null) ?? null,
+    rate: (row[rateColumn] as number | null) ?? null,
+  }));
+
+  const counts = new Map<string, { row: AppearanceDyeRow; count: number }>();
+  for (const row of normalized) {
+    const key = `${row.base}|${row.mix}|${row.rate}`;
+    const existing = counts.get(key);
+    if (existing) existing.count += 1;
+    else counts.set(key, { row, count: 1 });
+  }
+
+  const ranking: DyeRankingEntry[] = [...counts.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(({ row, count }) => ({
+      baseColor: row.base,
+      mixColor: row.mix,
+      mixRate: row.rate,
+      count,
+      percentage: normalized.length > 0 ? Math.round((count / normalized.length) * 1000) / 10 : 0,
+    }));
+
+  return { totalCount: normalized.length, ranking };
+}
+
+const STAT_SUGGESTION_SCAN_LIMIT = 60;
+
+/** 이름 목록에서 중복을 없애고 앞에서부터 limit개만 남긴다. */
+function dedupeNames(names: (string | null)[], limit: number): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const name of names) {
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+/**
+ * 통계 섹션 2(프리즘/염색 순위)의 자동완성. 캐시 아이템/헤어/성형 세 갈래에서 우리 DB에
+ * 실제로 존재하는 이름만 후보로 준다(maplestory.io 카탈로그가 아니라 크롤링된 실 데이터
+ * 기준이라, 결과가 반드시 존재함이 보장된다).
+ */
+export async function searchStatTargets(keyword: string): Promise<StatTarget[]> {
+  const trimmed = keyword.trim();
+  if (trimmed.length === 0) return [];
+
+  const [itemRows, hairRows, faceRows] = await Promise.all([
+    supabase
+      .from("cash_items")
+      .select("name, icon_url")
+      .ilike("name", `%${trimmed}%`)
+      .limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase
+      .from("characters")
+      .select("hair_name")
+      .ilike("hair_name", `%${trimmed}%`)
+      .limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase
+      .from("characters")
+      .select("face_name")
+      .ilike("face_name", `%${trimmed}%`)
+      .limit(STAT_SUGGESTION_SCAN_LIMIT),
+  ]);
+  if (itemRows.error) throw new Error(`아이템 후보 조회 실패: ${itemRows.error.message}`);
+  if (hairRows.error) throw new Error(`헤어 후보 조회 실패: ${hairRows.error.message}`);
+  if (faceRows.error) throw new Error(`성형 후보 조회 실패: ${faceRows.error.message}`);
+
+  const iconByName = new Map<string, string | null>();
+  for (const row of itemRows.data ?? []) {
+    if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
+  }
+  const itemNames = dedupeNames((itemRows.data ?? []).map((row) => row.name), 5);
+  const hairNames = dedupeNames((hairRows.data ?? []).map((row) => row.hair_name), 3);
+  const faceNames = dedupeNames((faceRows.data ?? []).map((row) => row.face_name), 3);
+
+  return [
+    ...itemNames.map((name): StatTarget => ({ kind: "item", name, iconUrl: iconByName.get(name) ?? null })),
+    ...hairNames.map((name): StatTarget => ({ kind: "hair", name })),
+    ...faceNames.map((name): StatTarget => ({ kind: "face", name })),
+  ];
+}
+
+export interface AppearanceSuggestion {
+  kind: Exclude<ItemSearchKind, "item">;
+  name: string;
+}
+
+/**
+ * 메인 검색창 자동완성용 헤어/성형/피부 후보. 캐시 아이템은 maplestory.io 카탈로그를 쓰지만
+ * 헤어/성형/피부는 그런 외부 카탈로그가 없으므로, 우리 DB에 실제로 크롤링된 이름만 후보로 준다.
+ */
+export async function searchAppearanceSuggestions(keyword: string): Promise<AppearanceSuggestion[]> {
+  const trimmed = keyword.trim();
+  if (trimmed.length === 0) return [];
+
+  const [hairRows, faceRows, skinRows] = await Promise.all([
+    supabase.from("characters").select("hair_name").ilike("hair_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase.from("characters").select("face_name").ilike("face_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase.from("characters").select("skin_name").ilike("skin_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
+  ]);
+  if (hairRows.error) throw new Error(`헤어 후보 조회 실패: ${hairRows.error.message}`);
+  if (faceRows.error) throw new Error(`성형 후보 조회 실패: ${faceRows.error.message}`);
+  if (skinRows.error) throw new Error(`피부 후보 조회 실패: ${skinRows.error.message}`);
+
+  const hairNames = dedupeNames((hairRows.data ?? []).map((row) => row.hair_name), 3);
+  const faceNames = dedupeNames((faceRows.data ?? []).map((row) => row.face_name), 3);
+  const skinNames = dedupeNames((skinRows.data ?? []).map((row) => row.skin_name), 3);
+
+  return [
+    ...hairNames.map((name): AppearanceSuggestion => ({ kind: "hair", name })),
+    ...faceNames.map((name): AppearanceSuggestion => ({ kind: "face", name })),
+    ...skinNames.map((name): AppearanceSuggestion => ({ kind: "skin", name })),
+  ];
 }

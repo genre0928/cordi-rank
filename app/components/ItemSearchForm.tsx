@@ -3,8 +3,15 @@ import { useEffect, useState } from "react";
 import { useFetcher, useNavigate, useNavigation, useRevalidator } from "react-router";
 import { encodeItemEntry } from "~/lib/item-search-params";
 import { cn } from "~/lib/cn";
-import { PRISM_ICON_URL, type ItemSuggestion } from "~/services/item-catalog-service";
-import type { GenderFilter, ItemSearchEntry } from "~/types/coordi";
+import {
+  FACE_ICON_URL,
+  HAIR_ICON_URL,
+  PRISM_ICON_URL,
+  SKIN_ICON_URL,
+  type ItemSuggestion,
+} from "~/services/item-catalog-service";
+import type { AppearanceSuggestion } from "~/services/coordi-service.server";
+import type { GenderFilter, ItemSearchEntry, ItemSearchKind } from "~/types/coordi";
 
 function buildSearchUrl(items: ItemSearchEntry[], gender: GenderFilter): string {
   const params = new URLSearchParams();
@@ -16,8 +23,31 @@ function buildSearchUrl(items: ItemSearchEntry[], gender: GenderFilter): string 
   return qs ? `/?${qs}` : "/";
 }
 
+/** 헤어/성형/피부는 아이템 아이콘이 없어, 부위별 고정 아이콘을 대신 쓴다. */
+function staticAppearanceIcon(kind: ItemSearchKind): string | null {
+  if (kind === "hair") return HAIR_ICON_URL;
+  if (kind === "face") return FACE_ICON_URL;
+  if (kind === "skin") return SKIN_ICON_URL;
+  return null;
+}
+
+function appearanceKindLabel(kind: ItemSearchKind): string {
+  if (kind === "hair") return "헤어";
+  if (kind === "face") return "성형";
+  if (kind === "skin") return "피부";
+  return "아이템";
+}
+
+/** 자동완성/최근검색/직접입력 등 어디서 오든, "이걸 태그로 추가하자"로 합류하는 공통 형태. */
+interface Candidate {
+  kind: ItemSearchKind;
+  name: string;
+  iconUrl?: string;
+}
+
 interface RecentItem {
   keyword: string;
+  kind: ItemSearchKind;
   iconUrl?: string;
 }
 
@@ -29,7 +59,9 @@ function loadRecentItems(): RecentItem[] {
     const raw = localStorage.getItem(RECENT_ITEMS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // kind가 없는 예전 저장값(이 기능 추가 전)은 아이템으로 간주해 계속 동작하게 한다.
+    return parsed.map((entry) => ({ ...entry, kind: entry.kind ?? "item" }));
   } catch {
     return [];
   }
@@ -43,13 +75,23 @@ function saveRecentItems(items: RecentItem[]) {
   }
 }
 
-/** 입력한 이름과 정확히 일치하는 아이템(캐시 장비)이 실제로 있는지 조회한다. */
-async function findExactSuggestion(keyword: string): Promise<ItemSuggestion | undefined> {
+interface SuggestResponse {
+  query: string;
+  suggestions: ItemSuggestion[];
+  appearances: AppearanceSuggestion[];
+}
+
+/** 입력한 이름과 정확히 일치하는 후보(캐시 아이템 또는 헤어/성형/피부)가 실제로 있는지 조회한다. */
+async function findExactCandidate(keyword: string): Promise<Candidate | undefined> {
   try {
     const res = await fetch(`/api/item-suggestions?q=${encodeURIComponent(keyword)}`);
     if (!res.ok) return undefined;
-    const data: { suggestions: ItemSuggestion[] } = await res.json();
-    return data.suggestions.find((s) => s.name.toLowerCase() === keyword.toLowerCase());
+    const data: SuggestResponse = await res.json();
+    const item = data.suggestions.find((s) => s.name.toLowerCase() === keyword.toLowerCase());
+    if (item) return { kind: "item", name: item.name, iconUrl: item.iconUrl };
+    const appearance = data.appearances.find((a) => a.name.toLowerCase() === keyword.toLowerCase());
+    if (appearance) return { kind: appearance.kind, name: appearance.name };
+    return undefined;
   } catch {
     return undefined;
   }
@@ -65,7 +107,8 @@ export function ItemSearchForm({
   const navigate = useNavigate();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
-  const suggestionFetcher = useFetcher<{ query: string; suggestions: ItemSuggestion[] }>();
+  const suggestionFetcher = useFetcher<SuggestResponse>();
+  const wearerCountFetcher = useFetcher<{ counts: Record<string, number> }>();
 
   // "새로고침"은 이미 기본 화면이면 revalidator로, 검색 중이었으면 navigate("/")로
   // 처리해 방식이 갈리므로, 두 경우 다 커버하도록 둘 다 확인한다.
@@ -84,20 +127,20 @@ export function ItemSearchForm({
     setRecentItems(loadRecentItems());
   }, []);
 
-  function recordRecentItem(keyword: string, iconUrl?: string) {
+  function recordRecentItem(entry: RecentItem) {
     setRecentItems((prev) => {
-      const next = [{ keyword, iconUrl }, ...prev.filter((entry) => entry.keyword !== keyword)].slice(
-        0,
-        MAX_RECENT_ITEMS,
-      );
+      const next = [
+        entry,
+        ...prev.filter((item) => !(item.keyword === entry.keyword && item.kind === entry.kind)),
+      ].slice(0, MAX_RECENT_ITEMS);
       saveRecentItems(next);
       return next;
     });
   }
 
-  function removeRecentItem(keyword: string) {
+  function removeRecentItem(kind: ItemSearchKind, keyword: string) {
     setRecentItems((prev) => {
-      const next = prev.filter((entry) => entry.keyword !== keyword);
+      const next = prev.filter((item) => !(item.keyword === keyword && item.kind === kind));
       saveRecentItems(next);
       return next;
     });
@@ -106,27 +149,45 @@ export function ItemSearchForm({
   const trimmedInput = inputValue.trim();
   const suggestions =
     suggestionFetcher.data?.query === trimmedInput ? suggestionFetcher.data.suggestions : [];
+  const appearances =
+    suggestionFetcher.data?.query === trimmedInput ? suggestionFetcher.data.appearances : [];
+  const wearerCounts = wearerCountFetcher.data?.counts ?? {};
 
+  // 연관검색어가 뜨는 체감 속도를 위해 디바운스를 짧게 잡는다(예전 300ms). 실제 지연은
+  // 대부분 서버 쪽(외부 카탈로그+DB 조회)이라 여기서 아주 크게 줄이진 못하지만, 타이핑을
+  // 멈춘 뒤 요청이 나가기까지의 대기 시간 자체는 확실히 줄어든다.
   useEffect(() => {
     if (trimmedInput.length === 0) return;
     const timer = setTimeout(() => {
       suggestionFetcher.load(`/api/item-suggestions?q=${encodeURIComponent(trimmedInput)}`);
-    }, 300);
+    }, 150);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimmedInput]);
 
-  // 새로고침 등으로 URL에서 복원된 검색어는 아이콘을 아직 모르니 한 번 채워둔다.
+  // 아이템 착용자 수는 일부러 자동완성 응답에서 분리했다(그래야 목록 자체가 먼저 뜬다).
+  // 목록이 갱신될 때마다 그 안의 아이템들 착용자 수만 뒤이어 따로 받아온다.
+  useEffect(() => {
+    if (suggestions.length === 0) return;
+    const params = suggestions.map((s) => `name=${encodeURIComponent(s.name)}`).join("&");
+    wearerCountFetcher.load(`/api/item-wearer-counts?${params}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionFetcher.data]);
+
+  // 새로고침 등으로 URL에서 복원된 아이템 검색어는 아이콘을 아직 모르니 한 번 채워둔다
+  // (헤어/성형/피부는 고정 아이콘을 쓰므로 조회할 필요가 없다).
   useEffect(() => {
     let cancelled = false;
     Promise.all(
-      initialItems.map(async (item) => [item.keyword, await findExactSuggestion(item.keyword)] as const),
+      initialItems
+        .filter((item) => item.kind === "item")
+        .map(async (item) => [item.keyword, await findExactCandidate(item.keyword)] as const),
     ).then((entries) => {
       if (cancelled) return;
       setIconMap((prev) => {
         const next = { ...prev };
-        for (const [keyword, suggestion] of entries) {
-          if (suggestion) next[keyword] = suggestion.iconUrl;
+        for (const [keyword, candidate] of entries) {
+          if (candidate?.iconUrl) next[keyword] = candidate.iconUrl;
         }
         return next;
       });
@@ -141,26 +202,30 @@ export function ItemSearchForm({
     navigate(buildSearchUrl(nextItems, nextGender));
   }
 
-  function addKeyword(raw: string, iconUrl?: string) {
-    const keyword = raw.trim();
-    if (keyword.length === 0 || items.some((item) => item.keyword === keyword)) return;
-    const next = [...items, { keyword, prismOnly: false }];
+  function addKeyword(candidate: Candidate) {
+    const keyword = candidate.name.trim();
+    if (keyword.length === 0 || items.some((item) => item.keyword === keyword && item.kind === candidate.kind)) {
+      return;
+    }
+    const next = [...items, { keyword, kind: candidate.kind, prismOnly: false }];
     setItems(next);
-    if (iconUrl) setIconMap((prev) => ({ ...prev, [keyword]: iconUrl }));
+    if (candidate.iconUrl) setIconMap((prev) => ({ ...prev, [keyword]: candidate.iconUrl as string }));
     setInputValue("");
     setNotFound(false);
-    recordRecentItem(keyword, iconUrl);
+    recordRecentItem({ keyword, kind: candidate.kind, iconUrl: candidate.iconUrl });
     runSearch(next, gender);
   }
 
-  function removeKeyword(keyword: string) {
-    const next = items.filter((item) => item.keyword !== keyword);
+  function removeKeyword(kind: ItemSearchKind, keyword: string) {
+    const next = items.filter((item) => !(item.kind === kind && item.keyword === keyword));
     setItems(next);
     runSearch(next, gender);
   }
 
-  function setPrismOnly(keyword: string, prismOnly: boolean) {
-    const next = items.map((item) => (item.keyword === keyword ? { ...item, prismOnly } : item));
+  function setPrismOnly(kind: ItemSearchKind, keyword: string, prismOnly: boolean) {
+    const next = items.map((item) =>
+      item.kind === kind && item.keyword === keyword ? { ...item, prismOnly } : item,
+    );
     setItems(next);
     runSearch(next, gender);
   }
@@ -169,21 +234,26 @@ export function ItemSearchForm({
     if (trimmedInput.length === 0 || isValidating) return;
 
     // 이미 로드된 자동완성 결과에 정확히 일치하는 항목이 있으면 바로 사용.
-    const localMatch = suggestions.find((s) => s.name.toLowerCase() === trimmedInput.toLowerCase());
-    if (localMatch) {
-      addKeyword(localMatch.name, localMatch.iconUrl);
+    const localItemMatch = suggestions.find((s) => s.name.toLowerCase() === trimmedInput.toLowerCase());
+    if (localItemMatch) {
+      addKeyword({ kind: "item", name: localItemMatch.name, iconUrl: localItemMatch.iconUrl });
+      return;
+    }
+    const localAppearanceMatch = appearances.find((a) => a.name.toLowerCase() === trimmedInput.toLowerCase());
+    if (localAppearanceMatch) {
+      addKeyword({ kind: localAppearanceMatch.kind, name: localAppearanceMatch.name });
       return;
     }
 
     // 자동완성이 아직 이 검색어 기준으로 로드되지 않았을 수 있으니 직접 확인한다.
     setIsValidating(true);
-    const exact = await findExactSuggestion(trimmedInput);
+    const exact = await findExactCandidate(trimmedInput);
     setIsValidating(false);
 
     if (exact) {
-      addKeyword(exact.name, exact.iconUrl);
+      addKeyword(exact);
     } else {
-      // 목록에 없는 아이템은 태그로 추가하지 않는다.
+      // 목록에 없는 검색어는 태그로 추가하지 않는다.
       setNotFound(true);
     }
   }
@@ -224,6 +294,8 @@ export function ItemSearchForm({
     runSearch(items, next);
   }
 
+  const hasSuggestions = suggestions.length > 0 || appearances.length > 0;
+
   return (
     <form
       onSubmit={handleSubmit}
@@ -237,7 +309,7 @@ export function ItemSearchForm({
           setNotFound(false);
         }}
         onKeyDown={handleInputKeyDown}
-        placeholder="아이템 이름을 입력하고 Enter (예: 황금 왕관)"
+        placeholder="아이템/헤어/성형/피부 이름을 입력하고 Enter (예: 황금 왕관)"
         aria-label="아이템 이름 검색어"
         autoComplete="off"
         aria-invalid={notFound}
@@ -248,7 +320,7 @@ export function ItemSearchForm({
       />
 
       {notFound && (
-        <p className="mt-1.5 text-xs text-red-500">목록에 없는 아이템이에요. 자동완성에서 골라주세요.</p>
+        <p className="mt-1.5 text-xs text-red-500">목록에 없는 검색어예요. 자동완성에서 골라주세요.</p>
       )}
 
       {trimmedInput.length === 0 && recentItems.length > 0 && (
@@ -258,24 +330,32 @@ export function ItemSearchForm({
             최근 검색한 아이템
           </li>
           {recentItems.map((recent) => (
-            <li key={recent.keyword} className="flex items-center">
+            <li key={`${recent.kind}-${recent.keyword}`} className="flex items-center">
               <button
                 type="button"
-                onClick={() => addKeyword(recent.keyword, recent.iconUrl)}
+                onClick={() => addKeyword({ kind: recent.kind, name: recent.keyword, iconUrl: recent.iconUrl })}
                 className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-orange-50 dark:hover:bg-gray-800"
               >
-                {recent.iconUrl ? (
-                  <img src={recent.iconUrl} alt="" className="h-6 w-6 shrink-0 object-contain" loading="lazy" />
+                {recent.iconUrl || staticAppearanceIcon(recent.kind) ? (
+                  <img
+                    src={recent.iconUrl ?? (staticAppearanceIcon(recent.kind) as string)}
+                    alt=""
+                    className="h-6 w-6 shrink-0 object-contain"
+                    loading="lazy"
+                  />
                 ) : (
                   <Shirt className="h-6 w-6 shrink-0 text-gray-300" aria-hidden="true" />
                 )}
                 <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
                   {recent.keyword}
                 </span>
+                {recent.kind !== "item" && (
+                  <span className="shrink-0 text-xs text-gray-400">{appearanceKindLabel(recent.kind)}</span>
+                )}
               </button>
               <button
                 type="button"
-                onClick={() => removeRecentItem(recent.keyword)}
+                onClick={() => removeRecentItem(recent.kind, recent.keyword)}
                 aria-label={`${recent.keyword} 최근 검색어 삭제`}
                 className="px-3 py-2 text-gray-300 transition hover:text-red-500"
               >
@@ -286,13 +366,13 @@ export function ItemSearchForm({
         </ul>
       )}
 
-      {trimmedInput.length > 0 && suggestions.length > 0 && (
+      {trimmedInput.length > 0 && hasSuggestions && (
         <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
           {suggestions.map((suggestion) => (
-            <li key={suggestion.id}>
+            <li key={`item-${suggestion.id}`}>
               <button
                 type="button"
-                onClick={() => addKeyword(suggestion.name, suggestion.iconUrl)}
+                onClick={() => addKeyword({ kind: "item", name: suggestion.name, iconUrl: suggestion.iconUrl })}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-orange-50 dark:hover:bg-gray-800"
               >
                 <img
@@ -307,14 +387,31 @@ export function ItemSearchForm({
                     <span className="text-gray-400 dark:text-gray-500"> ({suggestion.genderLabel})</span>
                   )}
                 </span>
-                <span
-                  className={cn(
-                    "shrink-0 text-xs",
-                    suggestion.wearerCount ? "text-gray-400 dark:text-gray-500" : "text-gray-300 dark:text-gray-600",
-                  )}
-                >
-                  {(suggestion.wearerCount ?? 0).toLocaleString("ko-KR")}명 착용
+                <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                  {wearerCounts[suggestion.name] != null
+                    ? `${wearerCounts[suggestion.name].toLocaleString("ko-KR")}명 착용`
+                    : ""}
                 </span>
+              </button>
+            </li>
+          ))}
+          {appearances.map((appearance) => (
+            <li key={`${appearance.kind}-${appearance.name}`}>
+              <button
+                type="button"
+                onClick={() => addKeyword({ kind: appearance.kind, name: appearance.name })}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-orange-50 dark:hover:bg-gray-800"
+              >
+                <img
+                  src={staticAppearanceIcon(appearance.kind) as string}
+                  alt=""
+                  className="h-6 w-6 shrink-0 object-contain"
+                  loading="lazy"
+                />
+                <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
+                  {appearance.name}
+                </span>
+                <span className="shrink-0 text-xs text-gray-400">{appearanceKindLabel(appearance.kind)}</span>
               </button>
             </li>
           ))}
@@ -324,10 +421,10 @@ export function ItemSearchForm({
       {items.length > 0 && (
         <ul className="mt-3 flex flex-wrap gap-2">
           {items.map((item) => {
-            const iconUrl = iconMap[item.keyword];
+            const iconUrl = iconMap[item.keyword] ?? staticAppearanceIcon(item.kind);
             return (
               <li
-                key={item.keyword}
+                key={`${item.kind}-${item.keyword}`}
                 className="flex items-center gap-1.5 rounded-full border border-gray-200 py-1 pl-1.5 pr-2 dark:border-gray-700"
               >
                 {iconUrl ? (
@@ -339,24 +436,26 @@ export function ItemSearchForm({
                 )}
                 <span className="sr-only">{item.keyword}</span>
 
-                <button
-                  type="button"
-                  onClick={() => setPrismOnly(item.keyword, !item.prismOnly)}
-                  aria-pressed={item.prismOnly}
-                  aria-label={`${item.keyword} 프리즘 적용 여부`}
-                  title={item.prismOnly ? "프리즘 적용" : "프리즘 미적용"}
-                  className="rounded-full p-0.5 transition hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <img
-                    src={PRISM_ICON_URL}
-                    alt=""
-                    className={cn("h-5 w-5 object-contain transition", !item.prismOnly && "grayscale opacity-50")}
-                  />
-                </button>
+                {item.kind === "item" && (
+                  <button
+                    type="button"
+                    onClick={() => setPrismOnly(item.kind, item.keyword, !item.prismOnly)}
+                    aria-pressed={item.prismOnly}
+                    aria-label={`${item.keyword} 프리즘 적용 여부`}
+                    title={item.prismOnly ? "프리즘 적용" : "프리즘 미적용"}
+                    className="rounded-full p-0.5 transition hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    <img
+                      src={PRISM_ICON_URL}
+                      alt=""
+                      className={cn("h-5 w-5 object-contain transition", !item.prismOnly && "grayscale opacity-50")}
+                    />
+                  </button>
+                )}
 
                 <button
                   type="button"
-                  onClick={() => removeKeyword(item.keyword)}
+                  onClick={() => removeKeyword(item.kind, item.keyword)}
                   aria-label={`${item.keyword} 검색어 삭제`}
                   className="text-gray-300 transition hover:text-red-500"
                 >

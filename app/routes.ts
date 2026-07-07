@@ -6,7 +6,9 @@ export default [
   route("like/:id", "routes/like.tsx"),
   route("liked", "routes/liked.tsx"),
   route("api/item-suggestions", "routes/item-suggestions.tsx"),
-  route("api/ranking", "routes/api.ranking.tsx"),
+  route("api/item-wearer-counts", "routes/api.item-wearer-counts.tsx"),
+  route("api/stat-suggestions", "routes/api.stat-suggestions.tsx"),
+  route("api/prism-ranking", "routes/api.prism-ranking.tsx"),
   route("api/liked-coordi", "routes/api.liked-coordi.tsx"),
   route("api/cron/crawl", "routes/api.cron.crawl.tsx"),
 ] satisfies RouteConfig;

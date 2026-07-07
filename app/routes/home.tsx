@@ -10,15 +10,14 @@ import {
   getCoordiStats,
   getLikedRanking,
   getRandomCoordi,
+  getTopSearchedItems,
   searchCoordiByItems,
 } from "~/services/coordi-service.server";
-import type { GenderFilter, ItemSearchEntry, RankingPeriod } from "~/types/coordi";
+import type { GenderFilter, ItemSearchEntry } from "~/types/coordi";
 import type { Route } from "./+types/home";
 
-/** 사이드바 랭킹 섹션에 노출할 순위 범위(4~10위). 1~3위는 TopRankingBanner가 담당한다. */
-const RANKING_OFFSET = 3;
-const RANKING_LIMIT = 7;
 const TOP_BANNER_LIMIT = 3;
+const TOP_SEARCHED_ITEMS_LIMIT = 5;
 const RANDOM_SAMPLE_SIZE = 20;
 
 function parseItems(searchParams: URLSearchParams): ItemSearchEntry[] {
@@ -45,19 +44,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const items = parseItems(url.searchParams);
   const gender = (url.searchParams.get("gender") as GenderFilter) || "all";
-  const period = (url.searchParams.get("period") as RankingPeriod) || "today";
   const hasSearched = items.length > 0;
 
-  const [displayResults, ranking, topRanking, stats] = await Promise.all([
+  const [displayResults, topRanking, stats, topSearchedItems] = await Promise.all([
     hasSearched
       ? searchCoordiByItems({ items, gender })
       : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
-    getLikedRanking(period, RANKING_LIMIT, RANKING_OFFSET),
     getLikedRanking("weekly", TOP_BANNER_LIMIT),
     getCoordiStats(),
+    getTopSearchedItems(TOP_SEARCHED_ITEMS_LIMIT),
   ]);
 
-  return { items, gender, period, hasSearched, displayResults, ranking, topRanking, stats };
+  return { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -85,7 +83,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, period, hasSearched, displayResults, ranking, topRanking, stats } = loaderData;
+  const { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems } = loaderData;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
@@ -130,7 +128,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
       </section>
 
-      <RankingSidebar period={period} items={ranking} />
+      <RankingSidebar topSearchedItems={topSearchedItems} />
     </main>
   );
 }
