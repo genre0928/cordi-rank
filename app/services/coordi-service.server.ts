@@ -1,3 +1,4 @@
+import { searchItemSuggestions } from "~/services/item-catalog-service";
 import { supabase } from "~/services/supabase.server";
 import type {
   AppearanceInfo,
@@ -13,8 +14,8 @@ import type {
   PrismRanking,
   PrismRankingEntry,
   RankingPeriod,
+  SearchColorInfo,
   SkinInfo,
-  StatTarget,
 } from "~/types/coordi";
 
 /**
@@ -428,15 +429,45 @@ export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> 
   if (!countRows || countRows.length === 0) return [];
 
   const names = countRows.map((row) => row.item_name);
-  const { data: iconRows, error: iconError } = await supabase
+
+  // 프리즘 염색된 아이콘이 뜨지 않도록, 우선 염색 안 된(prism_applied = false) 행의
+  // 아이콘을 찾는다.
+  const { data: plainIconRows, error: plainIconError } = await supabase
     .from("cash_items")
     .select("name, icon_url")
-    .in("name", names);
-  if (iconError) throw new Error(`아이템 아이콘 조회 실패: ${iconError.message}`);
+    .in("name", names)
+    .eq("prism_applied", false);
+  if (plainIconError) throw new Error(`아이템 아이콘 조회 실패: ${plainIconError.message}`);
 
   const iconByName = new Map<string, string | null>();
-  for (const row of iconRows ?? []) {
+  for (const row of plainIconRows ?? []) {
     if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
+  }
+
+  // 크롤링된 인스턴스가 전부 프리즘 적용이라 염색 안 된 행이 아예 없는 아이템도 있다.
+  // 그런 경우엔 maplestory.io 카탈로그(항상 기본 아이콘)에서 정확히 일치하는 이름을 찾는다.
+  const missingAfterPlain = names.filter((name) => !iconByName.has(name));
+  if (missingAfterPlain.length > 0) {
+    const catalogResults = await Promise.all(missingAfterPlain.map((name) => searchItemSuggestions(name)));
+    catalogResults.forEach((suggestions, idx) => {
+      const name = missingAfterPlain[idx];
+      const exact = suggestions.find((s) => s.name.toLowerCase() === name.toLowerCase());
+      if (exact) iconByName.set(name, exact.iconUrl);
+    });
+  }
+
+  // 카탈로그에도 없으면(비매너 아이템 등) 프리즘 적용된 아이콘이라도 최후의 수단으로
+  // 보여준다 — 아이콘이 아예 없는 것보다는 낫다.
+  const stillMissing = names.filter((name) => !iconByName.has(name));
+  if (stillMissing.length > 0) {
+    const { data: fallbackRows, error: fallbackError } = await supabase
+      .from("cash_items")
+      .select("name, icon_url")
+      .in("name", stillMissing);
+    if (fallbackError) throw new Error(`아이템 아이콘 조회 실패: ${fallbackError.message}`);
+    for (const row of fallbackRows ?? []) {
+      if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
+    }
   }
 
   return countRows.map((row) => ({
@@ -447,6 +478,7 @@ export async function getTopSearchedItems(limit = 5): Promise<ItemSearchStat[]> 
 }
 
 interface CashItemPrismRow {
+  character_id: number;
   prism_applied: boolean;
   color_range: string | null;
   hue: number | null;
@@ -454,96 +486,125 @@ interface CashItemPrismRow {
   value: number | null;
 }
 
+/** 색상 조합 하나에 hover했을 때 미리보기로 보여줄 코디 카드 수 상한(전체 개수/비율 계산엔 영향 없음). */
+const COMBO_PREVIEW_SAMPLE_SIZE = 12;
+
 /**
  * 특정 캐시 아이템의 프리즘 색상 조합 순위. 착용 중인 모든 스냅샷(검색 조건과 무관하게
  * 그 아이템 이름 전체)을 기준으로 집계한다. color_range+hue+saturation+value가 모두
- * 같은 조합을 하나로 묶어 개수/비율을 낸다.
+ * 같은 조합을 하나로 묶어 개수/비율을 낸다. hover 미리보기용으로 조합별 스냅샷 id도
+ * 함께 들고 있는다(조합당 상한 개수만).
  */
 export async function getPrismRankingForItem(itemName: string): Promise<PrismRanking> {
   const rows = await selectAllRows<CashItemPrismRow>("아이템 프리즘 조회", (from, to) =>
     supabase
       .from("cash_items")
-      .select("prism_applied, color_range, hue, saturation, value")
+      .select("character_id, prism_applied, color_range, hue, saturation, value")
       .eq("name", itemName)
       .range(from, to),
   );
 
   const prismRows = rows.filter((row) => row.prism_applied);
-  const counts = new Map<string, { row: CashItemPrismRow; count: number }>();
+  const groups = new Map<string, { row: CashItemPrismRow; count: number; ids: number[] }>();
   for (const row of prismRows) {
     const key = `${row.color_range}|${row.hue}|${row.saturation}|${row.value}`;
-    const existing = counts.get(key);
-    if (existing) existing.count += 1;
-    else counts.set(key, { row, count: 1 });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (existing.ids.length < COMBO_PREVIEW_SAMPLE_SIZE) existing.ids.push(row.character_id);
+    } else {
+      groups.set(key, { row, count: 1, ids: [row.character_id] });
+    }
   }
 
-  const ranking: PrismRankingEntry[] = [...counts.values()]
+  const ranking: PrismRankingEntry[] = [...groups.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
-    .map(({ row, count }) => ({
+    .map(({ row, count, ids }) => ({
       colorRange: row.color_range,
       hue: row.hue,
       saturation: row.saturation,
       value: row.value,
       count,
       percentage: prismRows.length > 0 ? Math.round((count / prismRows.length) * 1000) / 10 : 0,
+      entryIds: ids,
     }));
 
   return { totalCount: rows.length, prismAppliedCount: prismRows.length, ranking };
 }
 
 interface AppearanceDyeRow {
+  id: number;
   base: string | null;
   mix: string | null;
   rate: number | null;
 }
 
 /**
+ * "파란색 쿼츠 헤어"처럼 헤어 이름 맨 앞에는 항상 hair_base_color와 같은 색상 형용사가
+ * 붙는다(같은 스타일이라도 색상마다 아이템 이름 자체가 다름). 염색 순위는 "이 스타일의
+ * 색상 분포"를 보고 싶은 것이므로, 맨 앞 색상 단어를 떼어 스타일명만으로 묶어서 조회한다.
+ */
+function stripHairColorPrefix(hairName: string): string {
+  const spaceIndex = hairName.indexOf(" ");
+  return spaceIndex === -1 ? hairName : hairName.slice(spaceIndex + 1);
+}
+
+/**
  * 헤어/성형 하나의 색상 조합(기본색+혼합색+비율) 순위. characters 테이블에서 해당
  * 이름(hair_name 또는 face_name)과 일치하는 모든 스냅샷을 기준으로 집계한다.
+ * 헤어는 색상 접두사를 뗀 스타일명 기준(뒤가 일치)으로, 성형은 이름 그대로(정확히
+ * 일치)로 찾는다 — 성형은 이름 자체에 색상이 섞여 있지 않기 때문이다.
  */
 export async function getDyeRankingForAppearance(
   part: "hair" | "face",
   name: string,
 ): Promise<DyeRanking> {
-  const nameColumn = part === "hair" ? "hair_name" : "face_name";
   const baseColumn = part === "hair" ? "hair_base_color" : "face_base_color";
   const mixColumn = part === "hair" ? "hair_mix_color" : "face_mix_color";
   const rateColumn = part === "hair" ? "hair_mix_rate" : "face_mix_rate";
 
   const rows = await selectAllRows<Record<string, string | number | null>>(
     `${part} 색상 조회`,
-    (from, to) =>
-      supabase
-        .from("characters")
-        .select(`${baseColumn}, ${mixColumn}, ${rateColumn}`)
-        .eq(nameColumn, name)
-        .range(from, to),
+    (from, to) => {
+      const query = supabase.from("characters").select(`id, ${baseColumn}, ${mixColumn}, ${rateColumn}`);
+      return (
+        part === "hair"
+          ? query.ilike("hair_name", `%${stripHairColorPrefix(name)}`)
+          : query.eq("face_name", name)
+      ).range(from, to);
+    },
   );
 
   const normalized: AppearanceDyeRow[] = rows.map((row) => ({
+    id: row.id as number,
     base: (row[baseColumn] as string | null) ?? null,
     mix: (row[mixColumn] as string | null) ?? null,
     rate: (row[rateColumn] as number | null) ?? null,
   }));
 
-  const counts = new Map<string, { row: AppearanceDyeRow; count: number }>();
+  const groups = new Map<string, { row: AppearanceDyeRow; count: number; ids: number[] }>();
   for (const row of normalized) {
     const key = `${row.base}|${row.mix}|${row.rate}`;
-    const existing = counts.get(key);
-    if (existing) existing.count += 1;
-    else counts.set(key, { row, count: 1 });
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (existing.ids.length < COMBO_PREVIEW_SAMPLE_SIZE) existing.ids.push(row.id);
+    } else {
+      groups.set(key, { row, count: 1, ids: [row.id] });
+    }
   }
 
-  const ranking: DyeRankingEntry[] = [...counts.values()]
+  const ranking: DyeRankingEntry[] = [...groups.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
-    .map(({ row, count }) => ({
+    .map(({ row, count, ids }) => ({
       baseColor: row.base,
       mixColor: row.mix,
       mixRate: row.rate,
       count,
       percentage: normalized.length > 0 ? Math.round((count / normalized.length) * 1000) / 10 : 0,
+      entryIds: ids,
     }));
 
   return { totalCount: normalized.length, ranking };
@@ -564,49 +625,79 @@ function dedupeNames(names: (string | null)[], limit: number): string[] {
   return result;
 }
 
+interface SkinPrismRow {
+  id: number;
+  skin_color_style: string | null;
+  skin_hue: number | null;
+  skin_saturation: number | null;
+  skin_brightness: number | null;
+}
+
 /**
- * 통계 섹션 2(프리즘/염색 순위)의 자동완성. 캐시 아이템/헤어/성형 세 갈래에서 우리 DB에
- * 실제로 존재하는 이름만 후보로 준다(maplestory.io 카탈로그가 아니라 크롤링된 실 데이터
- * 기준이라, 결과가 반드시 존재함이 보장된다).
+ * 피부는 프리즘 같은 on/off 플래그가 없다 — 커스텀 색상을 적용하면 hue/saturation/
+ * brightness가 채워지고, 기본 피부 그대로면 셋 다 null이다. 그래서 hue가 null이 아닌
+ * 행을 "커스텀 적용"으로 간주해 아이템 프리즘과 같은 방식(PrismRanking)으로 집계한다.
  */
-export async function searchStatTargets(keyword: string): Promise<StatTarget[]> {
-  const trimmed = keyword.trim();
-  if (trimmed.length === 0) return [];
-
-  const [itemRows, hairRows, faceRows] = await Promise.all([
-    supabase
-      .from("cash_items")
-      .select("name, icon_url")
-      .ilike("name", `%${trimmed}%`)
-      .limit(STAT_SUGGESTION_SCAN_LIMIT),
+export async function getPrismRankingForSkin(skinName: string): Promise<PrismRanking> {
+  const rows = await selectAllRows<SkinPrismRow>("피부 색상 조회", (from, to) =>
     supabase
       .from("characters")
-      .select("hair_name")
-      .ilike("hair_name", `%${trimmed}%`)
-      .limit(STAT_SUGGESTION_SCAN_LIMIT),
-    supabase
-      .from("characters")
-      .select("face_name")
-      .ilike("face_name", `%${trimmed}%`)
-      .limit(STAT_SUGGESTION_SCAN_LIMIT),
-  ]);
-  if (itemRows.error) throw new Error(`아이템 후보 조회 실패: ${itemRows.error.message}`);
-  if (hairRows.error) throw new Error(`헤어 후보 조회 실패: ${hairRows.error.message}`);
-  if (faceRows.error) throw new Error(`성형 후보 조회 실패: ${faceRows.error.message}`);
+      .select("id, skin_color_style, skin_hue, skin_saturation, skin_brightness")
+      .eq("skin_name", skinName)
+      .range(from, to),
+  );
 
-  const iconByName = new Map<string, string | null>();
-  for (const row of itemRows.data ?? []) {
-    if (!iconByName.has(row.name)) iconByName.set(row.name, row.icon_url);
+  const customRows = rows.filter((row) => row.skin_hue !== null);
+  const groups = new Map<string, { row: SkinPrismRow; count: number; ids: number[] }>();
+  for (const row of customRows) {
+    const key = `${row.skin_color_style}|${row.skin_hue}|${row.skin_saturation}|${row.skin_brightness}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (existing.ids.length < COMBO_PREVIEW_SAMPLE_SIZE) existing.ids.push(row.id);
+    } else {
+      groups.set(key, { row, count: 1, ids: [row.id] });
+    }
   }
-  const itemNames = dedupeNames((itemRows.data ?? []).map((row) => row.name), 5);
-  const hairNames = dedupeNames((hairRows.data ?? []).map((row) => row.hair_name), 3);
-  const faceNames = dedupeNames((faceRows.data ?? []).map((row) => row.face_name), 3);
 
-  return [
-    ...itemNames.map((name): StatTarget => ({ kind: "item", name, iconUrl: iconByName.get(name) ?? null })),
-    ...hairNames.map((name): StatTarget => ({ kind: "hair", name })),
-    ...faceNames.map((name): StatTarget => ({ kind: "face", name })),
-  ];
+  const ranking: PrismRankingEntry[] = [...groups.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map(({ row, count, ids }) => ({
+      colorRange: row.skin_color_style,
+      hue: row.skin_hue,
+      saturation: row.skin_saturation,
+      value: row.skin_brightness,
+      count,
+      percentage: customRows.length > 0 ? Math.round((count / customRows.length) * 1000) / 10 : 0,
+      entryIds: ids,
+    }));
+
+  return { totalCount: rows.length, prismAppliedCount: customRows.length, ranking };
+}
+
+/**
+ * 홈 화면 통계 섹션 2: 왼쪽 검색창에 지금 걸려 있는 검색어 하나에 대한 색상 정보.
+ * 예전엔 이 섹션 자체가 독립된 검색창이었는데, 왼쪽 검색과 별개로 또 검색해야 하는 게
+ * 번거로워서 왼쪽 검색 상태를 그대로 반영하도록 바꿨다 — 종류(kind)별로 어떤 집계
+ * 함수를 쓸지만 갈라주면 된다.
+ */
+export async function getSearchColorInfo(entry: {
+  kind: ItemSearchKind;
+  keyword: string;
+}): Promise<SearchColorInfo> {
+  if (entry.kind === "item") {
+    return { kind: "item", keyword: entry.keyword, prism: await getPrismRankingForItem(entry.keyword), dye: null };
+  }
+  if (entry.kind === "skin") {
+    return { kind: "skin", keyword: entry.keyword, prism: await getPrismRankingForSkin(entry.keyword), dye: null };
+  }
+  return {
+    kind: entry.kind,
+    keyword: entry.keyword,
+    dye: await getDyeRankingForAppearance(entry.kind, entry.keyword),
+    prism: null,
+  };
 }
 
 export interface AppearanceSuggestion {

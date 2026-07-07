@@ -10,6 +10,7 @@ import {
   getCoordiStats,
   getLikedRanking,
   getRandomCoordi,
+  getSearchColorInfo,
   getTopSearchedItems,
   searchCoordiByItems,
 } from "~/services/coordi-service.server";
@@ -46,16 +47,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const gender = (url.searchParams.get("gender") as GenderFilter) || "all";
   const hasSearched = items.length > 0;
 
-  const [displayResults, topRanking, stats, topSearchedItems] = await Promise.all([
+  const [displayResults, topRanking, stats, topSearchedItems, searchColorInfo] = await Promise.all([
     hasSearched
       ? searchCoordiByItems({ items, gender })
       : getRandomCoordi(RANDOM_SAMPLE_SIZE, gender),
     getLikedRanking("weekly", TOP_BANNER_LIMIT),
     getCoordiStats(),
     getTopSearchedItems(TOP_SEARCHED_ITEMS_LIMIT),
+    // 우측 염색 정보는 왼쪽 검색창에 걸린 검색어를 그대로 반영한다(별도의 검색 UI 없음).
+    Promise.all(items.map((item) => getSearchColorInfo(item))),
   ]);
 
-  return { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems };
+  return { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems, searchColorInfo };
 }
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -83,7 +86,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-  const { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems } = loaderData;
+  const { items, gender, hasSearched, displayResults, topRanking, stats, topSearchedItems, searchColorInfo } =
+    loaderData;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8 lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
@@ -128,7 +132,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
         </div>
       </section>
 
-      <RankingSidebar topSearchedItems={topSearchedItems} />
+      <RankingSidebar topSearchedItems={topSearchedItems} searchColorInfo={searchColorInfo} />
     </main>
   );
 }

@@ -115,17 +115,7 @@ export interface ItemSearchStat {
   searchCount: number;
 }
 
-/** 통계 섹션 2의 검색 대상 종류: 캐시 아이템 / 헤어 / 성형(얼굴). */
-export type StatTargetKind = "item" | "hair" | "face";
-
-/** 통계 섹션 2 자동완성 후보. */
-export interface StatTarget {
-  kind: StatTargetKind;
-  name: string;
-  iconUrl?: string | null;
-}
-
-/** 캐시 아이템 하나의 프리즘 색상 조합별 집계 한 줄. */
+/** 캐시 아이템(또는 피부)의 색상 조합별 집계 한 줄. 피부는 프리즘 on/off 대신 커스텀 색상 적용 여부로 판단한다. */
 export interface PrismRankingEntry {
   colorRange: string | null;
   hue: number | null;
@@ -133,6 +123,8 @@ export interface PrismRankingEntry {
   value: number | null;
   count: number;
   percentage: number;
+  /** 이 조합에 해당하는 코디 스냅샷 id 일부(hover 미리보기용, 최대 COMBO_PREVIEW_SAMPLE_SIZE개). */
+  entryIds: number[];
 }
 
 export interface PrismRanking {
@@ -151,9 +143,22 @@ export interface DyeRankingEntry {
   mixRate: number | null;
   count: number;
   percentage: number;
+  /** 이 조합에 해당하는 코디 스냅샷 id 일부(hover 미리보기용, 최대 COMBO_PREVIEW_SAMPLE_SIZE개). */
+  entryIds: number[];
 }
 
 export interface DyeRanking {
   totalCount: number;
   ranking: DyeRankingEntry[];
+}
+
+/**
+ * 홈 화면 통계 섹션 2: 왼쪽 검색창에서 지금 검색 중인 검색어 하나에 대한 색상 정보.
+ * 더 이상 별도의 검색창이 아니라, 왼쪽 검색 상태를 그대로 반영해서 채운다.
+ */
+export interface SearchColorInfo {
+  kind: ItemSearchKind;
+  keyword: string;
+  prism: PrismRanking | null;
+  dye: DyeRanking | null;
 }
