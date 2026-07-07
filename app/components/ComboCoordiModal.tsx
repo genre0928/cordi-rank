@@ -1,14 +1,17 @@
 import { X } from "lucide-react";
 import { useEffect } from "react";
-import { Link, useFetcher } from "react-router";
-import { CoordiPortrait } from "~/components/CoordiPortrait";
+import { useFetcher } from "react-router";
+import { CharacterImageCard } from "~/components/CharacterImageCard";
 import { useComboModal } from "~/context/combo-modal";
 import type { CoordiEntry } from "~/types/coordi";
 
 /**
  * 통계 사이드바에서 색상 조합 한 줄을 클릭했을 때 뜨는 모달. 그 조합과 정확히 일치하는
- * 코디들을 작은 카드 그리드로 보여준다. 카드를 클릭하면(상세 모달을 또 띄우는 대신)
- * 상세 페이지로 실제 이동한다 — 모달 위에 모달이 쌓이는 걸 피하기 위해서다.
+ * 코디들을 카드로 보여준다. 카드 이미지를 크게 보여주기 위해 한 줄에 3~4장만 놓고
+ * (overflow-x-auto + snap) 좌우로 슬라이드해서 나머지를 보게 했다. 카드 자체는
+ * CharacterImageCard를 그대로 써서 좋아요/착용 아이템 정보 hover도 그대로 쓸 수 있다.
+ * 카드를 클릭하면(상세 모달을 또 띄우는 대신) 실제 상세 페이지로 이동한다 — 모달 위에
+ * 모달이 쌓이는 걸 피하기 위해서다.
  */
 export function ComboCoordiModal() {
   const { target, close } = useComboModal();
@@ -47,7 +50,7 @@ export function ComboCoordiModal() {
       aria-modal="true"
     >
       <div
-        className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-4 pt-8 shadow-2xl dark:bg-gray-900"
+        className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-4 pt-8 shadow-2xl dark:bg-gray-900"
         onClick={(event) => event.stopPropagation()}
       >
         <button
@@ -66,17 +69,12 @@ export function ComboCoordiModal() {
         ) : entries.length === 0 ? (
           <p className="py-16 text-center text-gray-400">표시할 코디가 없어요.</p>
         ) : (
-          <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <ul
+            className="mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {entries.map((entry) => (
-              <li key={entry.id}>
-                <Link
-                  to={`/coordi/${entry.id}`}
-                  onClick={close}
-                  aria-label={`${entry.characterName} 코디 상세화면으로 이동`}
-                  className="block aspect-[3/4] overflow-hidden rounded-lg border border-gray-100 dark:border-gray-800"
-                >
-                  <CoordiPortrait entry={entry} />
-                </Link>
+              <li key={entry.id} className="w-[28%] shrink-0 snap-start sm:w-[23%]">
+                <CharacterImageCard entry={entry} navigateToDetail onNavigate={close} showName />
               </li>
             ))}
           </ul>

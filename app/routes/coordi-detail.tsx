@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { CoordiDetailContent } from "~/components/CoordiDetailContent";
 import { isLikeAction } from "~/lib/should-revalidate";
@@ -49,11 +49,16 @@ export const meta: Route.MetaFunction = ({ data }) => {
  */
 export default function CoordiDetail({ loaderData }: Route.ComponentProps) {
   const { entry } = loaderData;
+  // 색상 조합 모달(ComboCoordiModal)의 카드를 클릭해 여기로 넘어온 경우, 그때 검색
+  // 중이던 화면(아이템 태그 등)으로 돌아가야 한다. 무조건 "/"로 보내면 검색 조건이
+  // 사라져서 우측 프리즘·염색 순위도 같이 사라지는 문제가 있었다.
+  const location = useLocation();
+  const backTo = (location.state as { from?: string } | null)?.from ?? "/";
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link
-        to="/"
+        to={backTo}
         className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-orange-500"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />

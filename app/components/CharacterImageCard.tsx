@@ -1,5 +1,6 @@
 import { Heart, Shirt } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router";
 import { CoordiPortrait } from "~/components/CoordiPortrait";
 import { RankBadge } from "~/components/RankBadge";
 import { useCoordiModal } from "~/context/coordi-modal";
@@ -30,18 +31,27 @@ export function CharacterImageCard({
   entry,
   rank,
   linkToDetail = false,
+  navigateToDetail = false,
+  onNavigate,
   showName = false,
 }: {
   entry: CoordiEntry;
   rank?: number;
   /** true면 클릭 시 페이지 이동 대신 상세 정보 모달(CoordiDetailModal)을 연다. */
   linkToDetail?: boolean;
+  /** true면 모달이 아니라 실제 상세 페이지(/coordi/:id)로 이동한다. 모달 안에서 이 카드를
+   * 보여줄 때(예: ComboCoordiModal) 모달 위에 모달이 쌓이는 걸 피하려고 쓴다. linkToDetail과
+   * 동시에 켜지 않는다. */
+  navigateToDetail?: boolean;
+  /** navigateToDetail일 때 이동 직전에 호출(예: 감싸고 있는 모달 닫기). */
+  onNavigate?: () => void;
   /** 랭킹 사이드바처럼 이미지 아래에 캐릭터 닉네임을 보여줄 때 사용 */
   showName?: boolean;
 }) {
   const { liked, count, toggle } = useLike(entry.id, entry.likeCount);
   const { rows, transparentItems } = buildDisplayRows(entry);
   const hasAnyItem = rows.length > 0 || transparentItems.length > 0;
+  const location = useLocation();
   const { open: openDetailModal } = useCoordiModal();
 
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -91,7 +101,17 @@ export function CharacterImageCard({
       <div className="relative aspect-[3/4] w-full">
         <div className="absolute inset-0 overflow-hidden rounded-xl border border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
           {rank !== undefined && <RankBadge rank={rank} />}
-          {linkToDetail ? (
+          {navigateToDetail ? (
+            <Link
+              to={`/coordi/${entry.id}`}
+              state={{ from: `${location.pathname}${location.search}` }}
+              onClick={onNavigate}
+              aria-label={`${entry.characterName} 코디 상세보기`}
+              className="block h-full w-full"
+            >
+              <CoordiPortrait entry={entry} />
+            </Link>
+          ) : linkToDetail ? (
             <button
               type="button"
               onClick={() => openDetailModal(entry.id)}
