@@ -19,3 +19,41 @@ html {
     color-scheme: dark;
   }
 }
+
+/* 페이지 이동/새로고침으로 로더가 도는 동안 보여주는 핀 드롭/바운스 로딩 인디케이터.
+   0%에서 위에서 뚝 떨어져 착지하며 통통 튀다가(스쿼시 포함) 100%에서 다시 시작 지점과
+   동일한 상태로 멈춰서, infinite로 반복해도 이음매 없이 계속 떨어지는 것처럼 보인다. */
+@keyframes pin-drop-bounce {
+  0% {
+    transform: translateY(-36px) scaleY(1);
+  }
+  45% {
+    transform: translateY(0) scaleY(1);
+  }
+  52% {
+    transform: translateY(2px) scaleY(0.8);
+  }
+  62% {
+    transform: translateY(-14px) scaleY(1.05);
+  }
+  75% {
+    transform: translateY(0) scaleY(1);
+  }
+  80% {
+    transform: translateY(1px) scaleY(0.92);
+  }
+  88% {
+    transform: translateY(-5px) scaleY(1);
+  }
+  96% {
+    transform: translateY(0) scaleY(1);
+  }
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.animate-pin-drop-bounce {
+  transform-origin: bottom center;
+  animation: pin-drop-bounce 1.1s cubic-bezier(0.32, 0, 0.67, 0) infinite;
+}

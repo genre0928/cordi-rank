@@ -10,6 +10,7 @@ import {
 import { CoordiDetailModal } from "~/components/CoordiDetailModal";
 import { Footer } from "~/components/Footer";
 import { Header } from "~/components/Header";
+import { NavigationPinIndicator } from "~/components/NavigationPinIndicator";
 import { CoordiModalProvider } from "~/context/coordi-modal";
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -62,6 +63,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <CoordiModalProvider>
+      <NavigationPinIndicator />
       <Outlet />
       <CoordiDetailModal />
     </CoordiModalProvider>
