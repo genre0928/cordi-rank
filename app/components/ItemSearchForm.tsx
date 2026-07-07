@@ -274,19 +274,13 @@ export function ItemSearchForm({
     }
   }
 
-  function handleReset() {
-    const alreadyAtDefault = items.length === 0 && gender === "all";
-    setItems([]);
+  function handleRefresh() {
     setInputValue("");
-    setGender("all");
-
-    if (alreadyAtDefault) {
-      // 이미 기본 화면(검색어 없음)이라 URL이 바뀌지 않으므로, 무작위 코디를 다시
-      // 뽑아오도록 로더 재실행을 직접 트리거한다.
-      revalidator.revalidate();
-    } else {
-      navigate("/");
-    }
+    // 검색 조건(아이템/헤어/성형/피부 태그, 성별)은 그대로 두고 지금 화면만 새로 불러온다.
+    // 예전엔 여기서 태그를 통째로 지웠는데, 그러면 검색 중에 새로고침을 눌렀을 때 검색
+    // 자체가 사라지고 우측 프리즘·염색 순위(그 태그 기준으로 계산됨)도 같이 사라지는
+    // 문제가 있었다. 검색 중이 아니면(태그 없음) 이 revalidate가 무작위 코디를 다시 뽑아준다.
+    revalidator.revalidate();
   }
 
   function updateGender(next: GenderFilter) {
@@ -492,7 +486,7 @@ export function ItemSearchForm({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleReset}
+            onClick={handleRefresh}
             disabled={isRefreshing}
             aria-busy={isRefreshing}
             className={cn(

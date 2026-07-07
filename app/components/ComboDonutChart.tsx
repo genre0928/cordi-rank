@@ -4,14 +4,14 @@ import { useComboModal } from "~/context/combo-modal";
 export interface DonutSegment {
   /** 모달 제목 등 전체 맥락에 쓰는 라벨(비율 %까지 포함). */
   modalLabel: string;
-  /** 가운데 caption처럼 짧게 보여줄 라벨(비율 % 제외, 숫자는 옆에 크게 따로 보여주므로). */
-  caption: string;
+  /** 가운데 caption처럼 짧게 보여줄 라벨(비율 % 제외, 숫자는 옆에 크게 따로 보여주므로). 한 줄이면 원소 1개, 두 줄이면 2개. */
+  caption: string[];
   percentage: number;
   color: string;
   entryIds: number[];
 }
 
-const SIZE = 140;
+const SIZE = 168;
 const STROKE_WIDTH = 18;
 const RADIUS = (SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -66,15 +66,19 @@ export function ComboDonutChart({ segments }: { segments: DonutSegment[] }) {
               onMouseLeave={() => setHoveredIndex(null)}
               onClick={() => open({ label: segment.modalLabel, entryIds: segment.entryIds })}
             >
-              <title>{`${segment.caption} ${segment.percentage}%`}</title>
+              <title>{`${segment.caption.join(" ")} ${segment.percentage}%`}</title>
             </circle>
           );
         })}
       </svg>
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
-        <span className="text-xl font-black text-gray-800 dark:text-gray-100">{shown.percentage}%</span>
-        <span className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-gray-400">{shown.caption}</span>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-2 text-center">
+        <span className="text-lg font-black text-gray-800 dark:text-gray-100">{shown.percentage}%</span>
+        {shown.caption.map((line, idx) => (
+          <span key={idx} className="line-clamp-1 text-[10px] leading-tight text-gray-400">
+            {line}
+          </span>
+        ))}
       </div>
     </div>
   );

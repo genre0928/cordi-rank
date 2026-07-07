@@ -1,5 +1,6 @@
 import { Palette, Trophy } from "lucide-react";
 import { ComboDonutChart, type DonutSegment } from "~/components/ComboDonutChart";
+import { formatSigned, shortColorRangeLabel } from "~/lib/coordi-display-rows";
 import type { DyeRanking, ItemSearchKind, ItemSearchStat, PrismRanking, SearchColorInfo } from "~/types/coordi";
 
 function kindLabel(kind: ItemSearchKind): string {
@@ -9,28 +10,21 @@ function kindLabel(kind: ItemSearchKind): string {
   return "아이템";
 }
 
-/** 부호를 항상 붙이고 자리수를 0으로 채운다 (예: signedPad(96, 3) -> "+096", signedPad(-76, 2) -> "-76"). */
-function signedPad(n: number, width: number): string {
-  const sign = n < 0 ? "-" : "+";
-  return `${sign}${Math.abs(n).toString().padStart(width, "0")}`;
-}
-
-/** 예: "색 +110 채 +90 명 +80" (비율은 도넛 차트 숫자로 따로 보여주니 여기엔 안 붙인다). */
-function prismComboCaption(entry: PrismRanking["ranking"][number]): string {
-  const hue = signedPad(entry.hue ?? 0, 3);
-  const saturation = signedPad(entry.saturation ?? 0, 2);
-  const value = signedPad(entry.value ?? 0, 2);
-  return `색 ${hue} 채 ${saturation} 명 ${value}`;
+/** 두 줄: 색상 계열 축약("전체", "초록" 등) + 색조/채도/명도. 코디 상세의 프리즘 표기와 형식을 맞췄다. */
+function prismComboCaption(entry: PrismRanking["ranking"][number]): string[] {
+  const rangeLabel = entry.colorRange ? shortColorRangeLabel(entry.colorRange) : "정보 없음";
+  const numbers = [entry.hue, entry.saturation, entry.value].map((n) => formatSigned(n ?? 0)).join(" ");
+  return [rangeLabel, numbers];
 }
 
 /** 예: "초41:갈59". 혼합색이 없으면 기본색 하나만. */
-function dyeComboCaption(entry: DyeRanking["ranking"][number]): string {
-  if (!entry.baseColor) return "정보 없음";
+function dyeComboCaption(entry: DyeRanking["ranking"][number]): string[] {
+  if (!entry.baseColor) return ["정보 없음"];
   const baseAbbr = entry.baseColor.charAt(0);
-  if (!entry.mixColor || entry.mixRate == null) return `${baseAbbr}100`;
+  if (!entry.mixColor || entry.mixRate == null) return [`${baseAbbr}100`];
   const mixAbbr = entry.mixColor.charAt(0);
   const baseShare = 100 - entry.mixRate;
-  return `${baseAbbr}${baseShare}:${mixAbbr}${entry.mixRate}`;
+  return [`${baseAbbr}${baseShare}:${mixAbbr}${entry.mixRate}`];
 }
 
 /** hue(0~359)를 그대로 HSL 색상값으로 써서, 실제 적용된 색상 계열과 비슷한 색으로 구간을 칠한다. */
@@ -59,7 +53,7 @@ function dyeSegmentColor(entry: DyeRanking["ranking"][number]): string {
 function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
   const segments: DonutSegment[] | null = info.prism
     ? info.prism.ranking.map((entry) => ({
-        modalLabel: `${prismComboCaption(entry)} (${entry.percentage}%)`,
+        modalLabel: `${prismComboCaption(entry).join(" ")} (${entry.percentage}%)`,
         caption: prismComboCaption(entry),
         percentage: entry.percentage,
         color: prismSegmentColor(entry),
@@ -67,7 +61,7 @@ function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
       }))
     : info.dye
       ? info.dye.ranking.map((entry) => ({
-          modalLabel: `${dyeComboCaption(entry)} (${entry.percentage}%)`,
+          modalLabel: `${dyeComboCaption(entry).join(" ")} (${entry.percentage}%)`,
           caption: dyeComboCaption(entry),
           percentage: entry.percentage,
           color: dyeSegmentColor(entry),

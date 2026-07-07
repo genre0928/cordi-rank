@@ -35,7 +35,7 @@ function buildItemsByPart(entry: CoordiEntry): Map<string, CashItem> {
 }
 
 /** 양수는 +를 붙이고, 음수는 원래 - 부호를 그대로 둔다. */
-function formatSigned(n: number): string {
+export function formatSigned(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
@@ -55,7 +55,7 @@ const COLOR_RANGE_LABELS: Record<string, string> = {
   분홍색: "분홍",
 };
 
-function shortColorRangeLabel(colorRange: string): string {
+export function shortColorRangeLabel(colorRange: string): string {
   const firstWord = colorRange.split(" ")[0];
   return COLOR_RANGE_LABELS[firstWord] ?? firstWord.replace(/색$/, "");
 }
