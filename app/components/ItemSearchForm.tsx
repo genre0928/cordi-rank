@@ -1,6 +1,6 @@
 import { Clock, RefreshCw, Search, Shirt, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useFetcher, useNavigate, useRevalidator } from "react-router";
+import { useFetcher, useNavigate, useNavigation, useRevalidator } from "react-router";
 import { encodeItemEntry } from "~/lib/item-search-params";
 import { cn } from "~/lib/cn";
 import { PRISM_ICON_URL, type ItemSuggestion } from "~/services/item-catalog-service";
@@ -63,8 +63,13 @@ export function ItemSearchForm({
   initialGender: GenderFilter;
 }) {
   const navigate = useNavigate();
+  const navigation = useNavigation();
   const revalidator = useRevalidator();
   const suggestionFetcher = useFetcher<{ query: string; suggestions: ItemSuggestion[] }>();
+
+  // "새로고침"은 이미 기본 화면이면 revalidator로, 검색 중이었으면 navigate("/")로
+  // 처리해 방식이 갈리므로, 두 경우 다 커버하도록 둘 다 확인한다.
+  const isRefreshing = revalidator.state === "loading" || navigation.state !== "idle";
 
   const [items, setItems] = useState<ItemSearchEntry[]>(initialItems);
   const [iconMap, setIconMap] = useState<Record<string, string>>({});
@@ -386,10 +391,15 @@ export function ItemSearchForm({
           <button
             type="button"
             onClick={handleReset}
-            className="flex items-center gap-1 rounded-full border border-gray-200 px-3.5 py-1.5 text-sm font-medium text-gray-500 transition hover:border-gray-300 dark:border-gray-700"
+            disabled={isRefreshing}
+            aria-busy={isRefreshing}
+            className={cn(
+              "flex items-center gap-1 rounded-full border border-gray-200 px-3.5 py-1.5 text-sm font-medium text-gray-500 transition hover:border-gray-300 dark:border-gray-700",
+              isRefreshing && "opacity-60",
+            )}
           >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            새로고침
+            <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} aria-hidden="true" />
+            {isRefreshing ? "불러오는 중..." : "새로고침"}
           </button>
           <button
             type="submit"

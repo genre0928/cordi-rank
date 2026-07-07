@@ -17,8 +17,7 @@ import type {
  *
  * characters는 캐릭터 한 명이 아니라 "코디 스냅샷" 한 장이 한 행이다. 같은 ocid(실제
  * 캐릭터)가 여러 행(코디 변천사)을 가질 수 있어, 화면에서 "이 코디 하나"를 가리킬 땐
- * 항상 스냅샷의 고유 id를 쓰고, ocid는 "같은 캐릭터의 다른 스냅샷을 제외"하는 용도로만
- * 쓴다(getCoordiWithSharedItems).
+ * 항상 스냅샷의 고유 id를 쓴다.
  */
 
 interface CharacterRow {
@@ -130,8 +129,6 @@ interface FetchOptions {
   jobGroup?: JobGroup;
   since?: Date;
   orderByLikes?: boolean;
-  /** 최신 스냅샷 위주로 정렬한다(무작위 샘플링 pool을 최근 것들로 한정할 때 사용). */
-  orderByRecent?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -144,7 +141,6 @@ async function fetchCoordiEntries(opts: FetchOptions): Promise<CoordiEntry[]> {
   if (opts.jobGroup) query = query.eq("job_group", opts.jobGroup);
   if (opts.since) query = query.gte("created_at", opts.since.toISOString());
   if (opts.orderByLikes) query = query.order("like_count", { ascending: false });
-  if (opts.orderByRecent) query = query.order("id", { ascending: false });
   if (opts.offset) {
     query = query.range(opts.offset, opts.offset + (opts.limit ?? 10) - 1);
   } else if (opts.limit) {
@@ -180,7 +176,6 @@ async function fetchCoordiEntries(opts: FetchOptions): Promise<CoordiEntry[]> {
 }
 
 const MAX_SEARCH_RESULTS = 60;
-const RANDOM_POOL_LIMIT = 500;
 
 async function idsMatchingCondition(keyword: string, prismOnly: boolean): Promise<Set<number>> {
   // prismOnly는 켜짐/꺼짐 둘 다 조건이다: 켜짐이면 프리즘 적용 아이템만, 꺼짐이면 프리즘 미적용 아이템만.
@@ -279,21 +274,29 @@ export async function getCoordiStats(): Promise<CoordiStats> {
   return { totalCount: count ?? 0, lastUpdatedAt: latestRow?.created_at ?? null };
 }
 
-/** 검색 조건이 없을 때 기본 화면에 보여줄 무작위 코디 샘플. 스냅샷 단위로 무작위 추출하므로
- * 코디를 자주 바꾸는 캐릭터가 더 자주 노출될 수 있다(받아들이기로 한 트레이드오프). */
+/**
+ * 검색 조건이 없을 때 기본 화면에 보여줄 무작위 코디 샘플.
+ * 이전엔 500명 pool을 통째로 가져와(그때마다 cash_items도 pool 전체 분량, 평균
+ * 캐릭터당 아이템 9개면 4000행 이상) 클라이언트에서 섞은 뒤 20개만 썼는데, DB가
+ * 커질수록 새로고침이 점점 느려졌다. 전체 개수를 세서 무작위 시작 위치 하나만 고르고
+ * 그 지점부터 필요한 개수만큼만 연속으로 가져오는 방식으로 바꿔, 실제 보여줄 만큼만
+ * 조회한다(완전한 셔플은 아니고 무작위 구간 하나지만, 새로고침마다 다른 코디가
+ * 보인다는 목적엔 충분하고 훨씬 가볍다).
+ */
 export async function getRandomCoordi(
   count: number,
   gender: GenderFilter = "all",
 ): Promise<CoordiEntry[]> {
-  const pool = await fetchCoordiEntries({ gender, orderByRecent: true, limit: RANDOM_POOL_LIMIT });
+  let countQuery = supabase.from("characters").select("*", { count: "exact", head: true });
+  if (gender !== "all") countQuery = countQuery.eq("gender", gender);
+  const { count: total, error: countError } = await countQuery;
+  if (countError) throw new Error(`캐릭터 수 조회 실패: ${countError.message}`);
+  if (!total || total === 0) return [];
 
-  const shuffled = [...pool];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
+  const maxOffset = Math.max(0, total - count);
+  const offset = Math.floor(Math.random() * (maxOffset + 1));
 
-  return shuffled.slice(0, count);
+  return fetchCoordiEntries({ gender, offset, limit: count });
 }
 
 function periodCutoff(period: RankingPeriod): Date {
@@ -337,32 +340,6 @@ export async function getCoordiByIds(ids: number[]): Promise<CoordiEntry[]> {
   const entries = await fetchCoordiEntries({ ids });
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return ids.map((id) => byId.get(id)).filter((entry): entry is CoordiEntry => entry !== undefined);
-}
-
-/** 이 캐릭터가 착용한 아이템 중 하나라도 겹치는 다른 캐릭터를 찾는다 (좋아요 순). 같은
- * 실제 캐릭터(ocid)의 다른 스냅샷은 "동일 아이템 코디"에서 제외한다. */
-export async function getCoordiWithSharedItems(entry: CoordiEntry, limit = 4): Promise<CoordiEntry[]> {
-  // "투명 OO"는 빈 슬롯을 감추는 placeholder라 대부분의 캐릭터가 겹쳐서 갖고 있다.
-  // 매칭 기준에 넣으면 실제 코디가 다른데도 "동일 아이템"으로 뜨는 노이즈가 되므로 제외한다.
-  const itemNames = [...new Set(entry.cashItems.map((item) => item.name))].filter(
-    (name) => !name.startsWith("투명"),
-  );
-  if (itemNames.length === 0) return [];
-
-  const itemRows = await selectAllRows<{ character_id: number }>("동일 아이템 캐릭터 조회", (from, to) =>
-    supabase.from("cash_items").select("character_id").in("name", itemNames).range(from, to),
-  );
-  const candidateIds = [...new Set(itemRows.map((row) => row.character_id))];
-  if (candidateIds.length === 0) return [];
-
-  const characterRows = await selectAllRows<{ id: number; ocid: string }>("캐릭터 조회", (from, to) =>
-    supabase.from("characters").select("id, ocid").in("id", candidateIds).range(from, to),
-  );
-
-  const otherIds = characterRows.filter((row) => row.ocid !== entry.ocid).map((row) => row.id);
-  if (otherIds.length === 0) return [];
-
-  return fetchCoordiEntries({ ids: otherIds, orderByLikes: true, limit });
 }
 
 export interface LikeResult {

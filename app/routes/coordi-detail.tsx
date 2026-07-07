@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { CoordiDetailContent } from "~/components/CoordiDetailContent";
 import { isLikeAction } from "~/lib/should-revalidate";
-import { getCoordiDetail, getCoordiWithSharedItems } from "~/services/coordi-service.server";
+import { getCoordiDetail } from "~/services/coordi-service.server";
 import type { Route } from "./+types/coordi-detail";
 
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
@@ -22,8 +22,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response("코디를 찾을 수 없습니다.", { status: 404 });
   }
 
-  const sameItemCoordi = await getCoordiWithSharedItems(entry);
-  return { entry, sameItemCoordi };
+  return { entry };
 }
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -49,7 +48,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
  * 직접 URL 접근·공유·검색엔진을 위해 그대로 풀 페이지로 남겨둔다.
  */
 export default function CoordiDetail({ loaderData }: Route.ComponentProps) {
-  const { entry, sameItemCoordi } = loaderData;
+  const { entry } = loaderData;
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -61,7 +60,7 @@ export default function CoordiDetail({ loaderData }: Route.ComponentProps) {
         코디 랭킹으로
       </Link>
 
-      <CoordiDetailContent entry={entry} sameItemCoordi={sameItemCoordi} />
+      <CoordiDetailContent entry={entry} />
     </main>
   );
 }
