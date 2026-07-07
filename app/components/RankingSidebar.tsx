@@ -1,17 +1,6 @@
 import { Palette, Trophy } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useFetcher } from "react-router";
-import { CoordiPortrait } from "~/components/CoordiPortrait";
-import { useCoordiModal } from "~/context/coordi-modal";
-import { cn } from "~/lib/cn";
-import type {
-  CoordiEntry,
-  DyeRanking,
-  ItemSearchKind,
-  ItemSearchStat,
-  PrismRanking,
-  SearchColorInfo,
-} from "~/types/coordi";
+import { useComboModal } from "~/context/combo-modal";
+import type { DyeRanking, ItemSearchKind, ItemSearchStat, PrismRanking, SearchColorInfo } from "~/types/coordi";
 
 function kindLabel(kind: ItemSearchKind): string {
   if (kind === "hair") return "헤어";
@@ -20,9 +9,18 @@ function kindLabel(kind: ItemSearchKind): string {
   return "아이템";
 }
 
-/** 예: "색110채90명80 24%" */
+/** 부호를 항상 붙이고 자리수를 0으로 채운다 (예: signedPad(96, 3) -> "+096", signedPad(-76, 2) -> "-76"). */
+function signedPad(n: number, width: number): string {
+  const sign = n < 0 ? "-" : "+";
+  return `${sign}${Math.abs(n).toString().padStart(width, "0")}`;
+}
+
+/** 예: "(색 +110 채 +90 명 +80) 24%" */
 function formatPrismCombo(entry: PrismRanking["ranking"][number]): string {
-  return `색${entry.hue ?? "-"}채${entry.saturation ?? "-"}명${entry.value ?? "-"} ${entry.percentage}%`;
+  const hue = signedPad(entry.hue ?? 0, 3);
+  const saturation = signedPad(entry.saturation ?? 0, 2);
+  const value = signedPad(entry.value ?? 0, 2);
+  return `(색 ${hue} 채 ${saturation} 명 ${value}) ${entry.percentage}%`;
 }
 
 /** 예: "(초41:갈59) 24%". 혼합색이 없으면 기본색 하나만(100%로 취급). */
@@ -38,34 +36,12 @@ function formatDyeCombo(entry: DyeRanking["ranking"][number]): string {
 }
 
 /**
- * 색상 조합 한 줄. hover(데스크톱) 또는 탭(모바일)하면 그 조합과 정확히 일치하는
- * 코디 카드들을 아래에 작은 미리보기로 띄운다. entryIds는 조합당 최대
- * COMBO_PREVIEW_SAMPLE_SIZE개만 들고 있으므로(서비스 레이어 주석 참고), 처음 열 때
- * 딱 한 번만 그 id들의 상세 정보를 가져온다(/api/liked-coordi가 getCoordiByIds를 그대로
- * 재사용하는 범용 라우트라 여기서도 그대로 쓴다).
+ * 색상 조합 한 줄. 클릭하면 그 조합과 정확히 일치하는 코디들을 모아 보여주는 모달이 뜬다
+ * (ComboCoordiModal). entryIds는 조합당 최대 COMBO_PREVIEW_SAMPLE_SIZE개만 들고 있으므로
+ * (서비스 레이어 주석 참고), 모달이 그 id들로 실제 상세 정보를 가져온다.
  */
 function ComboRow({ index, label, entryIds }: { index: number; label: string; entryIds: number[] }) {
-  const fetcher = useFetcher<{ entries: CoordiEntry[] }>();
-  const { open } = useCoordiModal();
-  const [forceShow, setForceShow] = useState(false);
-  const rowRef = useRef<HTMLLIElement>(null);
-  const loadedRef = useRef(false);
-
-  function ensureLoaded() {
-    if (loadedRef.current || entryIds.length === 0) return;
-    loadedRef.current = true;
-    fetcher.load(`/api/liked-coordi?ids=${entryIds.join(",")}`);
-  }
-
-  // 모바일에서 미리보기를 연 채로 바깥을 탭하면 닫히게 한다.
-  useEffect(() => {
-    if (!forceShow) return;
-    function handleOutsideClick(event: MouseEvent) {
-      if (!rowRef.current?.contains(event.target as Node)) setForceShow(false);
-    }
-    document.addEventListener("click", handleOutsideClick);
-    return () => document.removeEventListener("click", handleOutsideClick);
-  }, [forceShow]);
+  const { open } = useComboModal();
 
   if (entryIds.length === 0) {
     return (
@@ -76,55 +52,15 @@ function ComboRow({ index, label, entryIds }: { index: number; label: string; en
   }
 
   return (
-    <li
-      ref={rowRef}
-      onMouseEnter={ensureLoaded}
-      className="group/combo relative hover:z-20"
-    >
+    <li>
       <button
         type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          ensureLoaded();
-          setForceShow((current) => !current);
-        }}
-        aria-pressed={forceShow}
-        aria-label={`${label} 코디 미리보기`}
+        onClick={() => open({ label, entryIds })}
+        aria-label={`${label} 코디 보기`}
         className="w-full rounded px-0.5 text-left text-xs text-gray-600 transition hover:text-orange-500 dark:text-gray-300"
       >
         {index + 1}. {label}
       </button>
-
-      <div
-        className={cn(
-          "pointer-events-none absolute left-0 top-full z-30 mt-1 w-60 max-w-[85vw] rounded-lg bg-black/90 p-2 opacity-0 shadow-xl transition-opacity duration-150",
-          "group-hover/combo:pointer-events-auto group-hover/combo:opacity-100",
-          forceShow && "pointer-events-auto opacity-100",
-        )}
-      >
-        {!fetcher.data ? (
-          <p className="p-1 text-center text-[11px] text-white/60">불러오는 중...</p>
-        ) : fetcher.data.entries.length === 0 ? (
-          <p className="p-1 text-center text-[11px] text-white/60">표시할 코디가 없어요.</p>
-        ) : (
-          <div className="grid grid-cols-4 gap-1">
-            {fetcher.data.entries.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  open(entry.id);
-                }}
-                aria-label={`${entry.characterName} 코디 상세보기`}
-                className="aspect-[3/4] overflow-hidden rounded"
-              >
-                <CoordiPortrait entry={entry} />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
     </li>
   );
 }
@@ -148,7 +84,7 @@ function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
               {info.kind === "skin" ? "커스텀 색상 적용" : "프리즘 적용"}{" "}
               {info.prism.prismAppliedCount.toLocaleString("ko-KR")}/{info.prism.totalCount.toLocaleString("ko-KR")}건
             </p>
-            <ol className="mt-1.5 space-y-2.5">
+            <ol className="mt-1.5 space-y-1">
               {info.prism.ranking.map((entry, idx) => (
                 <ComboRow
                   key={idx}
@@ -166,7 +102,7 @@ function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
         ) : (
           <>
             <p className="mt-2 text-xs text-gray-400">총 {info.dye.totalCount.toLocaleString("ko-KR")}건</p>
-            <ol className="mt-1.5 space-y-2.5">
+            <ol className="mt-1.5 space-y-1">
               {info.dye.ranking.map((entry, idx) => (
                 <ComboRow key={idx} index={idx} label={formatDyeCombo(entry)} entryIds={entry.entryIds} />
               ))}
@@ -185,7 +121,7 @@ function SearchColorInfoCard({ info }: { info: SearchColorInfo }) {
  *    순위를, 헤어/성형은 기본색+혼합색 비율 조합 순위를 보여준다. 예전엔 이 섹션 자체가
  *    독립된 검색창이었지만, 왼쪽 검색과 별개로 또 검색해야 하는 게 번거로워 왼쪽 검색
  *    상태를 그대로 반영하도록 바꿨다(별도 fetcher 없이 loader가 내려주는 데이터를 그대로 씀).
- *    각 조합 줄은 hover/탭하면 그 조합과 일치하는 코디를 미리보기로 보여준다(ComboRow).
+ *    각 조합 줄은 클릭하면 그 조합과 일치하는 코디 모음 모달(ComboCoordiModal)이 뜬다.
  */
 export function RankingSidebar({
   topSearchedItems,
