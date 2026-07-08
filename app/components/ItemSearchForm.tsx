@@ -1,6 +1,6 @@
 import { Clock, RefreshCw, Search, Shirt, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useFetcher, useNavigate, useNavigation, useRevalidator } from "react-router";
+import { useFetcher, useNavigate, useRevalidator } from "react-router";
 import { encodeItemEntry } from "~/lib/item-search-params";
 import { cn } from "~/lib/cn";
 import {
@@ -108,14 +108,15 @@ export function ItemSearchForm({
   initialGender: GenderFilter;
 }) {
   const navigate = useNavigate();
-  const navigation = useNavigation();
   const revalidator = useRevalidator();
   const suggestionFetcher = useFetcher<SuggestResponse>();
   const wearerCountFetcher = useFetcher<{ counts: Record<string, number> }>();
 
-  // "새로고침"은 이미 기본 화면이면 revalidator로, 검색 중이었으면 navigate("/")로
-  // 처리해 방식이 갈리므로, 두 경우 다 커버하도록 둘 다 확인한다.
-  const isRefreshing = revalidator.state === "loading" || navigation.state !== "idle";
+  // "새로고침" 버튼은 이 버튼이 직접 시작한 로딩(revalidator)만 반영한다. 검색어 추가/
+  // 성별 변경처럼 다른 동작으로 생기는 페이지 이동(navigation)까지 같이 반영하면, 새로고침을
+  // 누르지 않았는데도 버튼이 "불러오는 중" 상태로 보이는 문제가 있었다. 전체 화면 로딩
+  // 표시는 NavigationPinIndicator가 navigation 기준으로 따로 담당한다.
+  const isRefreshing = revalidator.state === "loading";
 
   const [items, setItems] = useState<ItemSearchEntry[]>(initialItems);
   const [iconMap, setIconMap] = useState<Record<string, string>>({});
