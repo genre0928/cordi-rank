@@ -743,6 +743,27 @@ export async function getSearchColorInfo(entry: {
 export interface AppearanceSuggestion {
   kind: Exclude<ItemSearchKind, "item">;
   name: string;
+  /** 헤어/성형만 채워진다(피부는 성별 제한이 없음). 그 이름을 착용한 캐릭터가 한 성별뿐이면
+   * 그 성별, 남/여 둘 다 있으면(사실상 없겠지만 방어적으로) null. */
+  genderLabel?: "남" | "여" | null;
+}
+
+/** 이름별로 관측된 성별이 하나뿐이면 그 성별을, 여러 성별이 섞여 있으면 null을 돌려준다. */
+function buildGenderLabelByName(rows: { name: string | null; gender: string }[]): Map<string, "남" | "여" | null> {
+  const gendersByName = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.name) continue;
+    const set = gendersByName.get(row.name) ?? new Set<string>();
+    set.add(row.gender);
+    gendersByName.set(row.name, set);
+  }
+
+  const result = new Map<string, "남" | "여" | null>();
+  for (const [name, genders] of gendersByName) {
+    const only = genders.size === 1 ? [...genders][0] : null;
+    result.set(name, only === "남" || only === "여" ? only : null);
+  }
+  return result;
 }
 
 /**
@@ -754,8 +775,16 @@ export async function searchAppearanceSuggestions(keyword: string): Promise<Appe
   if (trimmed.length === 0) return [];
 
   const [hairRows, faceRows, skinRows] = await Promise.all([
-    supabase.from("characters").select("hair_name").ilike("hair_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
-    supabase.from("characters").select("face_name").ilike("face_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase
+      .from("characters")
+      .select("hair_name, gender")
+      .ilike("hair_name", `%${trimmed}%`)
+      .limit(STAT_SUGGESTION_SCAN_LIMIT),
+    supabase
+      .from("characters")
+      .select("face_name, gender")
+      .ilike("face_name", `%${trimmed}%`)
+      .limit(STAT_SUGGESTION_SCAN_LIMIT),
     supabase.from("characters").select("skin_name").ilike("skin_name", `%${trimmed}%`).limit(STAT_SUGGESTION_SCAN_LIMIT),
   ]);
   if (hairRows.error) throw new Error(`헤어 후보 조회 실패: ${hairRows.error.message}`);
@@ -764,16 +793,26 @@ export async function searchAppearanceSuggestions(keyword: string): Promise<Appe
 
   // 헤어는 "파란색 쿼츠 헤어"/"초록색 쿼츠 헤어"처럼 색상 접두사만 다른 같은 스타일이
   // 흔해서, 접두사를 뗀 스타일명으로 묶어야 자동완성에 중복(사실상 같은 헤어)이 안 뜬다.
-  const hairNames = dedupeNames(
-    (hairRows.data ?? []).map((row) => (row.hair_name ? stripHairColorPrefix(row.hair_name) : null)),
-    3,
-  );
-  const faceNames = dedupeNames((faceRows.data ?? []).map((row) => row.face_name), 3);
+  const hairRawRows = (hairRows.data ?? []).map((row) => ({
+    name: row.hair_name ? stripHairColorPrefix(row.hair_name) : null,
+    gender: row.gender,
+  }));
+  const hairNames = dedupeNames(hairRawRows.map((row) => row.name), 3);
+  const hairGenderByName = buildGenderLabelByName(hairRawRows);
+
+  const faceRawRows = (faceRows.data ?? []).map((row) => ({ name: row.face_name, gender: row.gender }));
+  const faceNames = dedupeNames(faceRawRows.map((row) => row.name), 3);
+  const faceGenderByName = buildGenderLabelByName(faceRawRows);
+
   const skinNames = dedupeNames((skinRows.data ?? []).map((row) => row.skin_name), 3);
 
   return [
-    ...hairNames.map((name): AppearanceSuggestion => ({ kind: "hair", name })),
-    ...faceNames.map((name): AppearanceSuggestion => ({ kind: "face", name })),
+    ...hairNames.map(
+      (name): AppearanceSuggestion => ({ kind: "hair", name, genderLabel: hairGenderByName.get(name) ?? null }),
+    ),
+    ...faceNames.map(
+      (name): AppearanceSuggestion => ({ kind: "face", name, genderLabel: faceGenderByName.get(name) ?? null }),
+    ),
     ...skinNames.map((name): AppearanceSuggestion => ({ kind: "skin", name })),
   ];
 }

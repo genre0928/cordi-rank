@@ -420,6 +420,9 @@ export function ItemSearchForm({
                 />
                 <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
                   {appearance.name}
+                  {appearance.genderLabel && (
+                    <span className="text-gray-400 dark:text-gray-500"> ({appearance.genderLabel})</span>
+                  )}
                 </span>
                 <span className="shrink-0 text-xs text-gray-400">{appearanceKindLabel(appearance.kind)}</span>
               </button>
