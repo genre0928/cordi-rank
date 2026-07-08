@@ -43,12 +43,15 @@ interface Candidate {
   kind: ItemSearchKind;
   name: string;
   iconUrl?: string;
+  /** kind가 "item"일 때만 있는 착용 부위(모자/상의/신발 등). */
+  part?: string | null;
 }
 
 interface RecentItem {
   keyword: string;
   kind: ItemSearchKind;
   iconUrl?: string;
+  part?: string | null;
 }
 
 const RECENT_ITEMS_KEY = "recentItemSearches";
@@ -88,7 +91,7 @@ async function findExactCandidate(keyword: string): Promise<Candidate | undefine
     if (!res.ok) return undefined;
     const data: SuggestResponse = await res.json();
     const item = data.suggestions.find((s) => s.name.toLowerCase() === keyword.toLowerCase());
-    if (item) return { kind: "item", name: item.name, iconUrl: item.iconUrl };
+    if (item) return { kind: "item", name: item.name, iconUrl: item.iconUrl, part: item.part };
     const appearance = data.appearances.find((a) => a.name.toLowerCase() === keyword.toLowerCase());
     if (appearance) return { kind: appearance.kind, name: appearance.name };
     return undefined;
@@ -212,7 +215,7 @@ export function ItemSearchForm({
     if (candidate.iconUrl) setIconMap((prev) => ({ ...prev, [keyword]: candidate.iconUrl as string }));
     setInputValue("");
     setNotFound(false);
-    recordRecentItem({ keyword, kind: candidate.kind, iconUrl: candidate.iconUrl });
+    recordRecentItem({ keyword, kind: candidate.kind, iconUrl: candidate.iconUrl, part: candidate.part });
     runSearch(next, gender);
   }
 
@@ -236,7 +239,12 @@ export function ItemSearchForm({
     // 이미 로드된 자동완성 결과에 정확히 일치하는 항목이 있으면 바로 사용.
     const localItemMatch = suggestions.find((s) => s.name.toLowerCase() === trimmedInput.toLowerCase());
     if (localItemMatch) {
-      addKeyword({ kind: "item", name: localItemMatch.name, iconUrl: localItemMatch.iconUrl });
+      addKeyword({
+        kind: "item",
+        name: localItemMatch.name,
+        iconUrl: localItemMatch.iconUrl,
+        part: localItemMatch.part,
+      });
       return;
     }
     const localAppearanceMatch = appearances.find((a) => a.name.toLowerCase() === trimmedInput.toLowerCase());
@@ -327,7 +335,9 @@ export function ItemSearchForm({
             <li key={`${recent.kind}-${recent.keyword}`} className="flex items-center">
               <button
                 type="button"
-                onClick={() => addKeyword({ kind: recent.kind, name: recent.keyword, iconUrl: recent.iconUrl })}
+                onClick={() =>
+                  addKeyword({ kind: recent.kind, name: recent.keyword, iconUrl: recent.iconUrl, part: recent.part })
+                }
                 className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-orange-50 dark:hover:bg-gray-800"
               >
                 {recent.iconUrl || staticAppearanceIcon(recent.kind) ? (
@@ -343,9 +353,9 @@ export function ItemSearchForm({
                 <span className="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
                   {recent.keyword}
                 </span>
-                {recent.kind !== "item" && (
-                  <span className="shrink-0 text-xs text-gray-400">{appearanceKindLabel(recent.kind)}</span>
-                )}
+                <span className="shrink-0 text-xs text-gray-400">
+                  {recent.kind === "item" ? recent.part : appearanceKindLabel(recent.kind)}
+                </span>
               </button>
               <button
                 type="button"
@@ -366,7 +376,9 @@ export function ItemSearchForm({
             <li key={`item-${suggestion.id}`}>
               <button
                 type="button"
-                onClick={() => addKeyword({ kind: "item", name: suggestion.name, iconUrl: suggestion.iconUrl })}
+                onClick={() =>
+                  addKeyword({ kind: "item", name: suggestion.name, iconUrl: suggestion.iconUrl, part: suggestion.part })
+                }
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition hover:bg-orange-50 dark:hover:bg-gray-800"
               >
                 <img
