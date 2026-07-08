@@ -117,7 +117,7 @@ export interface ItemSuggestion {
 
 export async function searchItemSuggestions(
   query: string,
-  limit = 8,
+  limit = 15,
 ): Promise<ItemSuggestion[]> {
   const keyword = query.trim();
   if (keyword.length === 0) return [];

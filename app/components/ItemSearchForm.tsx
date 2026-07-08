@@ -372,7 +372,7 @@ export function ItemSearchForm({
       )}
 
       {trimmedInput.length > 0 && hasSuggestions && (
-        <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
+        <ul className="mt-2 max-h-72 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-100 dark:divide-gray-800 dark:border-gray-800">
           {suggestions.map((suggestion) => (
             <li key={`item-${suggestion.id}`}>
               <button

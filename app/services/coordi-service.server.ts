@@ -806,14 +806,14 @@ export async function searchAppearanceSuggestions(keyword: string): Promise<Appe
     name: row.hair_name ? stripHairColorPrefix(row.hair_name) : null,
     gender: row.gender,
   }));
-  const hairNames = dedupeNames(hairRawRows.map((row) => row.name), 3);
+  const hairNames = dedupeNames(hairRawRows.map((row) => row.name), 5);
   const hairGenderByName = buildGenderLabelByName(hairRawRows);
 
   const faceRawRows = (faceRows.data ?? []).map((row) => ({ name: row.face_name, gender: row.gender }));
-  const faceNames = dedupeNames(faceRawRows.map((row) => row.name), 3);
+  const faceNames = dedupeNames(faceRawRows.map((row) => row.name), 5);
   const faceGenderByName = buildGenderLabelByName(faceRawRows);
 
-  const skinNames = dedupeNames((skinRows.data ?? []).map((row) => row.skin_name), 3);
+  const skinNames = dedupeNames((skinRows.data ?? []).map((row) => row.skin_name), 5);
 
   return [
     ...hairNames.map(
