@@ -248,9 +248,12 @@ export async function countWearersByItemNames(names: string[]): Promise<Record<s
  * "가장 많이 검색된 아이템" 집계용. 검색창은 자동완성에서 고른 정확한 아이템 이름만
  * 태그로 추가하므로(목록에 없는 이름은 애초에 막힘), searchCoordiByItems가 실행될 때마다
  * 그 이름 그대로 카운트를 올리면 된다. 집계 실패가 검색 자체를 막으면 안 되므로 에러는
- * 조용히 무시한다.
+ * 조용히 무시한다. 로컬 개발(`npm run dev`) 중 테스트 삼아 한 검색은 운영 DB의 통계를
+ * 오염시키면 안 되므로, DEV 환경에서는 아예 기록하지 않는다(배포된 프로덕션 빌드는
+ * import.meta.env.DEV가 false라 정상적으로 집계된다).
  */
 async function logItemSearch(names: string[]): Promise<void> {
+  if (import.meta.env.DEV) return;
   await Promise.allSettled(
     names.map((name) => supabase.rpc("increment_item_search_count", { p_item_name: name })),
   );
@@ -406,6 +409,12 @@ export async function setCoordiLiked(id: number, liked: boolean): Promise<LikeRe
   }
 
   const next = Math.max(0, current.like_count + (liked ? 1 : -1));
+
+  // 로컬 개발 중 테스트 삼아 누른 좋아요가 운영 DB의 실제 좋아요 수를 오염시키면 안
+  // 되므로, DEV 환경에서는 DB에 반영하지 않고 화면에 보여줄 값만 돌려준다(새로고침하면
+  // 원래 값으로 돌아간다 - 로컬 테스트용이라 문제 없음).
+  if (import.meta.env.DEV) return { likeCount: next };
+
   const { error: updateError } = await supabase.from("characters").update({ like_count: next }).eq("id", id);
   if (updateError) throw new Error(`좋아요 반영 실패: ${updateError.message}`);
 
