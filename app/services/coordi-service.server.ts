@@ -1,4 +1,4 @@
-import { searchItemSuggestions } from "~/services/item-catalog-service";
+import { searchItemSuggestions, type ItemSuggestion } from "~/services/item-catalog-service";
 import { supabase } from "~/services/supabase.server";
 import type {
   AppearanceInfo,
@@ -852,4 +852,67 @@ export async function countWearersByAppearanceNames(
     }),
   );
   return Object.fromEntries(entries);
+}
+
+interface CrawledItemRow {
+  id: number;
+  name: string;
+  icon_url: string | null;
+  part: string | null;
+  characters: { gender: string } | { gender: string }[] | null;
+}
+
+/**
+ * maplestory.io 카탈로그는 커뮤니티가 관리하는 비공식 데이터라 "젤리 버블 풍선"처럼 갓
+ * 나온 최신 아이템은 아직 안 올라와 있는 경우가 있다. 그런 아이템도 실제로 우리 DB에
+ * 크롤링돼 있으면(누군가 이미 착용 중이면) 검색에서 찾을 수 있어야 하므로, 카탈로그
+ * 검색으로 못 찾은 이름만 cash_items에서 직접 보조로 찾는다. "투명 OO" 빈 슬롯
+ * placeholder는 실제 아이템이 아니므로 제외한다.
+ */
+export async function searchCrawledItemSuggestions(
+  keyword: string,
+  excludeNames: Set<string>,
+  limit: number,
+): Promise<ItemSuggestion[]> {
+  const trimmed = keyword.trim();
+  if (trimmed.length === 0 || limit <= 0) return [];
+
+  const { data, error } = await supabase
+    .from("cash_items")
+    .select("id, name, icon_url, part, characters!inner(gender)")
+    .ilike("name", `%${trimmed}%`)
+    .not("name", "ilike", "투명%")
+    .limit(STAT_SUGGESTION_SCAN_LIMIT)
+    .returns<CrawledItemRow[]>();
+  if (error) throw new Error(`크롤링된 아이템 후보 조회 실패: ${error.message}`);
+
+  const byName = new Map<
+    string,
+    { id: number; iconUrl: string | null; part: string | null; genders: Set<string> }
+  >();
+  for (const row of data ?? []) {
+    if (excludeNames.has(row.name)) continue;
+    const genderRow = Array.isArray(row.characters) ? row.characters[0] : row.characters;
+    const gender = genderRow?.gender;
+
+    const existing = byName.get(row.name);
+    if (existing) {
+      if (gender) existing.genders.add(gender);
+    } else {
+      byName.set(row.name, {
+        id: row.id,
+        iconUrl: row.icon_url,
+        part: row.part,
+        genders: new Set(gender ? [gender] : []),
+      });
+    }
+  }
+
+  return [...byName.entries()].slice(0, limit).map(([name, info]) => ({
+    id: info.id,
+    name,
+    iconUrl: info.iconUrl ?? "",
+    genderLabel: info.genders.size === 1 ? ([...info.genders][0] as "남" | "여") : null,
+    part: info.part,
+  }));
 }
