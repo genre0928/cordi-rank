@@ -1,7 +1,9 @@
 import { ArrowLeft } from "lucide-react";
+import { useEffect } from "react";
 import { Link, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { CoordiDetailContent } from "~/components/CoordiDetailContent";
+import { recordRecentlyViewed } from "~/lib/recently-viewed-storage";
 import { isLikeAction } from "~/lib/should-revalidate";
 import { getCoordiDetail } from "~/services/coordi-service.server";
 import type { Route } from "./+types/coordi-detail";
@@ -54,6 +56,10 @@ export default function CoordiDetail({ loaderData }: Route.ComponentProps) {
   // 사라져서 우측 프리즘·염색 순위도 같이 사라지는 문제가 있었다.
   const location = useLocation();
   const backTo = (location.state as { from?: string } | null)?.from ?? "/";
+
+  useEffect(() => {
+    recordRecentlyViewed(entry.id);
+  }, [entry.id]);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">

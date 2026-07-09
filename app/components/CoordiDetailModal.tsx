@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useFetcher } from "react-router";
 import { CoordiDetailContent } from "~/components/CoordiDetailContent";
 import { useCoordiModal } from "~/context/coordi-modal";
+import { recordRecentlyViewed } from "~/lib/recently-viewed-storage";
 import type { loader } from "~/routes/coordi-detail";
 
 /**
@@ -19,6 +20,7 @@ export function CoordiDetailModal() {
     if (id && loadedIdRef.current !== id) {
       loadedIdRef.current = id;
       fetcher.load(`/coordi/${id}`);
+      recordRecentlyViewed(id);
     }
     if (!id) loadedIdRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
