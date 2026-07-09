@@ -107,7 +107,7 @@ export function CharacterImageCard({
               state={{ from: `${location.pathname}${location.search}` }}
               onClick={onNavigate}
               aria-label={`${entry.characterName} 코디 상세보기`}
-              className="block h-full w-full"
+              className="block h-full w-full cursor-pointer"
             >
               <CoordiPortrait entry={entry} />
             </Link>
@@ -116,7 +116,7 @@ export function CharacterImageCard({
               type="button"
               onClick={() => openDetailModal(entry.id)}
               aria-label={`${entry.characterName} 코디 상세보기`}
-              className="block h-full w-full text-left"
+              className="block h-full w-full cursor-pointer text-left"
             >
               <CoordiPortrait entry={entry} />
             </button>

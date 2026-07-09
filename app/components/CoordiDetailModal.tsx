@@ -55,7 +55,7 @@ export function CoordiDetailModal() {
       aria-modal="true"
     >
       <div
-        className="relative max-h-[92vh] w-full max-w-xl overflow-y-auto overflow-x-hidden rounded-2xl bg-white p-4 pt-8 shadow-2xl [-ms-overflow-style:none] [scrollbar-width:none] dark:bg-gray-900 sm:p-6 sm:pt-10 [&::-webkit-scrollbar]:hidden"
+        className="relative max-h-[92vh] w-full max-w-xl overflow-y-auto overflow-x-hidden rounded-2xl bg-white p-4 pt-8 shadow-2xl [-ms-overflow-style:none] [scrollbar-width:none] dark:bg-gray-900 sm:p-6 sm:pt-10 lg:max-w-2xl [&::-webkit-scrollbar]:hidden"
         onClick={(event) => event.stopPropagation()}
       >
         <button

@@ -92,7 +92,7 @@ export function EquipmentGrid({ entry }: { entry: CoordiEntry }) {
           ))}
         </div>
 
-        <div className="aspect-[3/4] w-24 shrink-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 sm:w-56">
+        <div className="aspect-[3/4] w-24 shrink-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 sm:w-56 lg:w-72">
           <CoordiPortrait entry={entry} />
         </div>
 
