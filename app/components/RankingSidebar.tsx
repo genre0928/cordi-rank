@@ -325,8 +325,8 @@ type TabKey = "stats" | "liked" | "recent";
 
 const TABS: { key: TabKey; label: string; icon: typeof BarChart3 }[] = [
   { key: "stats", label: "통계", icon: BarChart3 },
-  { key: "liked", label: "내 좋아요", icon: Heart },
-  { key: "recent", label: "최근 본 캐릭터", icon: History },
+  { key: "liked", label: "좋아요", icon: Heart },
+  { key: "recent", label: "최근 본", icon: History },
 ];
 
 /**
@@ -365,7 +365,7 @@ export function RankingSidebar({
             type="button"
             onClick={() => setActiveTab(key)}
             className={cn(
-              "flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1.5 text-xs font-semibold transition",
+              "flex flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-full px-1.5 py-1.5 text-xs font-semibold transition",
               activeTab === key
                 ? "bg-orange-500 text-white"
                 : "text-gray-500 hover:text-orange-500 dark:text-gray-400",
