@@ -111,6 +111,7 @@ export function ItemSearchForm({
   const revalidator = useRevalidator();
   const suggestionFetcher = useFetcher<SuggestResponse>();
   const wearerCountFetcher = useFetcher<{ counts: Record<string, number> }>();
+  const appearanceWearerCountFetcher = useFetcher<{ counts: Record<string, number> }>();
 
   // "새로고침" 버튼은 이 버튼이 직접 시작한 로딩(revalidator)만 반영한다. 검색어 추가/
   // 성별 변경처럼 다른 동작으로 생기는 페이지 이동(navigation)까지 같이 반영하면, 새로고침을
@@ -156,6 +157,7 @@ export function ItemSearchForm({
   const appearances =
     suggestionFetcher.data?.query === trimmedInput ? suggestionFetcher.data.appearances : [];
   const wearerCounts = wearerCountFetcher.data?.counts ?? {};
+  const appearanceWearerCounts = appearanceWearerCountFetcher.data?.counts ?? {};
 
   // 연관검색어가 뜨는 체감 속도를 위해 디바운스를 짧게 잡는다(예전 300ms). 실제 지연은
   // 대부분 서버 쪽(외부 카탈로그+DB 조회)이라 여기서 아주 크게 줄이진 못하지만, 타이핑을
@@ -175,6 +177,15 @@ export function ItemSearchForm({
     if (suggestions.length === 0) return;
     const params = suggestions.map((s) => `name=${encodeURIComponent(s.name)}`).join("&");
     wearerCountFetcher.load(`/api/item-wearer-counts?${params}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionFetcher.data]);
+
+  // 헤어/성형 착용자 수도 같은 이유로 분리했다(피부는 착용자 수를 보여줄 필요가 없다).
+  useEffect(() => {
+    const targets = appearances.filter((a) => a.kind === "hair" || a.kind === "face");
+    if (targets.length === 0) return;
+    const params = targets.map((t) => `${t.kind}=${encodeURIComponent(t.name)}`).join("&");
+    appearanceWearerCountFetcher.load(`/api/appearance-wearer-counts?${params}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestionFetcher.data]);
 
@@ -304,23 +315,38 @@ export function ItemSearchForm({
       onSubmit={handleSubmit}
       className="rounded-2xl border border-orange-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
     >
-      <input
-        type="text"
-        value={inputValue}
-        onChange={(e) => {
-          setInputValue(e.target.value);
-          setNotFound(false);
-        }}
-        onKeyDown={handleInputKeyDown}
-        placeholder="아이템/헤어/성형/피부 이름을 입력하고 Enter (예: 황금 왕관)"
-        aria-label="아이템 이름 검색어"
-        autoComplete="off"
-        aria-invalid={notFound}
-        className={cn(
-          "w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-400 dark:bg-gray-900",
-          notFound ? "border-red-300" : "border-gray-200 dark:border-gray-700",
+      <div className="relative">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setNotFound(false);
+          }}
+          onKeyDown={handleInputKeyDown}
+          placeholder="아이템/헤어/성형/피부 이름을 입력하고 Enter (예: 황금 왕관)"
+          aria-label="아이템 이름 검색어"
+          autoComplete="off"
+          aria-invalid={notFound}
+          className={cn(
+            "w-full rounded-lg border px-3 py-2 pr-9 text-sm outline-none focus:border-orange-400 dark:bg-gray-900",
+            notFound ? "border-red-300" : "border-gray-200 dark:border-gray-700",
+          )}
+        />
+        {inputValue.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setInputValue("");
+              setNotFound(false);
+            }}
+            aria-label="검색어 지우기"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-300 transition hover:text-gray-500 dark:hover:text-gray-300"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         )}
-      />
+      </div>
 
       {notFound && (
         <p className="mt-1.5 text-xs text-red-500">목록에 없는 검색어예요. 자동완성에서 골라주세요.</p>
@@ -424,6 +450,13 @@ export function ItemSearchForm({
                     <span className="text-gray-400 dark:text-gray-500"> ({appearance.genderLabel})</span>
                   )}
                 </span>
+                {(appearance.kind === "hair" || appearance.kind === "face") && (
+                  <span className="shrink-0 text-xs text-gray-400 dark:text-gray-500">
+                    {appearanceWearerCounts[`${appearance.kind}:${appearance.name}`] != null
+                      ? `${appearanceWearerCounts[`${appearance.kind}:${appearance.name}`].toLocaleString("ko-KR")}명 착용`
+                      : ""}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs text-gray-400">{appearanceKindLabel(appearance.kind)}</span>
               </button>
             </li>

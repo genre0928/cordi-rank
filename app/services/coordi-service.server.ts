@@ -755,6 +755,8 @@ export interface AppearanceSuggestion {
   /** 헤어/성형만 채워진다(피부는 성별 제한이 없음). 그 이름을 착용한 캐릭터가 한 성별뿐이면
    * 그 성별, 남/여 둘 다 있으면(사실상 없겠지만 방어적으로) null. */
   genderLabel?: "남" | "여" | null;
+  /** 이 헤어/성형을 실제로 착용 중인 캐릭터 수. /api/appearance-wearer-counts 라우트에서 DB 조회 후 채워진다. */
+  wearerCount?: number;
 }
 
 /** 이름별로 관측된 성별이 하나뿐이면 그 성별을, 여러 성별이 섞여 있으면 null을 돌려준다. */
@@ -824,4 +826,30 @@ export async function searchAppearanceSuggestions(keyword: string): Promise<Appe
     ),
     ...skinNames.map((name): AppearanceSuggestion => ({ kind: "skin", name })),
   ];
+}
+
+/**
+ * 헤어/성형 하나를 실제로 착용 중인 캐릭터 수(스냅샷이 아니라 ocid 기준 중복 제거).
+ * 헤어는 색상 접두사를 뗀 스타일명으로 묶여 있으므로, 염색(색상 변형) 상관없이 그
+ * 스타일의 모든 색상 변형을 합산해서 센다 — hair_name ILIKE 접미사 매칭을 쓰는 이유.
+ * 성형은 이름 자체에 색상이 안 섞여 있어 정확히 일치하는 것만 세면 된다.
+ */
+async function countWearersByAppearanceName(kind: "hair" | "face", name: string): Promise<number> {
+  const rows = await selectAllRows<{ ocid: string }>(`${kind} 착용자 수 조회`, (from, to) => {
+    const query = supabase.from("characters").select("ocid");
+    return (kind === "hair" ? query.ilike("hair_name", `%${name}`) : query.eq("face_name", name)).range(from, to);
+  });
+  return new Set(rows.map((row) => row.ocid)).size;
+}
+
+export async function countWearersByAppearanceNames(
+  targets: { kind: "hair" | "face"; name: string }[],
+): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    targets.map(async (target) => {
+      const count = await countWearersByAppearanceName(target.kind, target.name);
+      return [`${target.kind}:${target.name}`, count] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
 }

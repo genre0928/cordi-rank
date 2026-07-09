@@ -7,6 +7,7 @@ export default [
   route("liked", "routes/liked.tsx"),
   route("api/item-suggestions", "routes/item-suggestions.tsx"),
   route("api/item-wearer-counts", "routes/api.item-wearer-counts.tsx"),
+  route("api/appearance-wearer-counts", "routes/api.appearance-wearer-counts.tsx"),
   route("api/liked-coordi", "routes/api.liked-coordi.tsx"),
   route("api/cron/crawl", "routes/api.cron.crawl.tsx"),
 ] satisfies RouteConfig;
